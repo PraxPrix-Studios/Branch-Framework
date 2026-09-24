@@ -6,6 +6,7 @@
 		{ group: "start", title: "Start", pages: [
 			["index", "Home"],
 			["getting-started", "Getting started"],
+			["features", "Unique features"],
 		] },
 		{ group: "guide", title: "Guides", pages: [
 			["guide/segments", "Segments"],
@@ -40,6 +41,7 @@
 		'<a class="brand" href="' + href("index") + '"><img src="' + root + 'assets/mark.png" alt="">Branch</a>' +
 		'<span class="ver">v2.0.0</span>' +
 		'<nav class="links" aria-label="Main">' +
+		'<a href="' + href("features") + '">Features</a>' +
 		'<a href="' + href("getting-started") + '">Docs</a>' +
 		'<a href="' + href("api/branch") + '">API</a>' +
 		'<a href="' + href("benchmarks") + '">Benchmarks</a>' +

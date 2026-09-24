@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Unique features · Branch</title>
+<meta name="description" content="What Branch does that other Roblox frameworks and networking libraries do not: a live compiler in Studio, traffic savers, built-in rate limits, a live network profiler, and player data that cannot be corrupted.">
+<link rel="icon" href="assets/mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="assets/site.css">
+<style>
+.feat{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin:18px 0 8px}
+.feat article{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;min-width:0}
+.feat h3{margin:0 0 6px;font:600 16.5px/1.3 var(--body);display:flex;gap:9px;align-items:baseline}
+.feat h3 i{flex:none;width:9px;height:9px;border-radius:50%;background:var(--grad);transform:translateY(-1px)}
+.feat p{margin:0;color:var(--muted);font-size:14.5px;max-width:none}
+.feat code{font-size:.82em}
+.feat pre{margin:10px 0 0;font-size:12.5px;padding:10px 12px}
+.feat .new{font:600 10.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--good);border:1px solid color-mix(in srgb,var(--good) 45%,transparent);border-radius:999px;padding:2px 7px;margin-left:auto}
+</style>
+</head>
+<body data-root="" data-page="features">
+<div class="layout">
+<aside class="side" id="sidebar" aria-label="Documentation"></aside>
+<main class="doc">
+<div class="eyebrow">start/features</div>
+<h1>Unique <em>features</em></h1>
+<p class="lead">Branch is a compiler-driven framework with its own Studio environment. Because the compiler understands your whole project, Branch can do things a plain library cannot. Here is everything that sets it apart.</p>
+
+<h2>Networking you declare, compiled for you</h2>
+<div class="feat">
+  <article><h3><i></i>Declared inside your services</h3><p>No separate IDL files, no command-line build. The network contract lives next to the code that owns it, in <code>Service.Network</code>, and compiles as you type.</p></article>
+  <article><h3><i></i>Faster than Blink and NetRay</h3><p>Measured in Lune and in the real engine: Branch wins every case except the function round trip, which ties. <a href="benchmarks.html">See the benchmarks</a>.</p></article>
+  <article><h3><i></i>Stepped numbers</h3><p>Declare the precision you need and the number shrinks to fit it: <code>f32(0..1, 0.01)</code> travels in 1 byte instead of 4.</p></article>
+  <article><h3><i></i>Runs</h3><p>When the same event repeats, its id is written once for the whole run instead of once per event.</p></article>
+  <article><h3><i></i>Packed booleans across the whole struct</h3><p>Every boolean and every "is this optional value here" flag in a record shares one bit mask; boolean arrays pack 8 per byte.</p></article>
+  <article><h3><i></i>One FireAllClients per frame</h3><p>Broadcasts are written once and shipped once, and every player still receives all events in exact order, even when broadcasts and single sends are mixed.</p></article>
+  <article><h3><i></i>Unreliable, batched safely</h3><p>Unreliable events are grouped into packets that always stay under Roblox's size limit, instead of one remote call per event.</p></article>
+  <article><h3><i></i>Errors that stay contained</h3><p>A bad argument errors at your call without corrupting the frame. A listener that throws is reported like any script error, and the rest of the packet still arrives.</p></article>
+</div>
+
+<h2>Send less</h2>
+<div class="feat">
+  <article><h3><i></i>Latest<span class="new">new</span></h3><p>Fire a position three times in a frame, and only the newest one is sent. The older ones are dropped before they cost anything.</p><pre><code>Pos = { From = "Server", Latest = true, Data = "vector" }</code></pre></article>
+  <article><h3><i></i>Delta<span class="new">new</span></h3><p>Only the fields that changed since the last send travel; a character standing still costs almost nothing. With <code>Key</code>, one event carries many objects, each with its own state.</p><pre><code>Unit = { From = "Server", Delta = true, Key = "id", Data = { id = "u16", pos = "vector", hp = "u8" } }</code></pre></article>
+  <article><h3><i></i>Booleans that cost zero bytes<span class="new">new</span></h3><p>In a Delta event, a changed boolean is not sent at all: its "changed" bit already says it flipped.</p></article>
+  <article><h3><i></i>FireNear<span class="new">new</span></h3><p>Send only to players whose character is within a radius. In a big map, the savings grow with the player count.</p><pre><code>Net.Explosion.FireNear(position, 150, damage)</code></pre></article>
+</div>
+
+<h2>Security built into the declaration</h2>
+<div class="feat">
+  <article><h3><i></i>Everything from clients is validated</h3><p>Bounds, ranges, NaN and infinity, enum values, Instance classes and array lengths are checked on the server before any listener runs. Lengths are checked before anything is allocated.</p></article>
+  <article><h3><i></i>Rate limits<span class="new">new</span></h3><p>One word stops exploiters spamming valid events. Extra events are dropped, functions answer "failed", and <code>OnReject</code> tells you who.</p><pre><code>Attack = { From = "Client", Rate = "10/s", Data = { dir = "vector" } }</code></pre></article>
+  <article><h3><i></i>OnReject</h3><p>One place to hear about every malformed packet and every rate-limit breach, to log or kick.</p></article>
+</div>
+
+<h2>A Studio environment, not just a library</h2>
+<div class="feat">
+  <article><h3><i></i>Live compiler</h3><p>Typed autocomplete for your segments and data paths, and the network code, rebuilt as you type, in one undo step. Nothing is written when nothing changed.</p></article>
+  <article><h3><i></i>Bytes per fire, before you run</h3><p>The Network page shows every event's direction, reliability and wire size while you write it.</p></article>
+  <article><h3><i></i>Live network profiler<span class="new">new</span></h3><p>While you Play, a window shows every event's sends per second, bytes per second and share of the traffic, busiest first. Studio only: zero cost in live servers.</p></article>
+  <article><h3><i></i>Smaller-type hints<span class="new">new</span></h3><p>The profiler watches real values and suggests tighter types: "always a whole number from 0 to 200: declare it as u8 instead of u32 to save 3 B per value".</p></article>
+  <article><h3><i></i>Smart rename</h3><p>Rename a module and its name follows through your code: the table name, <code>GetSegment</code>, <code>Dependencies</code>, and every path that really leads to it. What it cannot update safely, it lists for you.</p></article>
+  <article><h3><i></i>Engine names checked while you type</h3><p>A mistyped <code>Enum(...)</code> is an error and an unknown <code>Instance(...)</code> class is a warning, before the game ever runs.</p></article>
+  <article><h3><i></i>Templates for new modules</h3><p>New services and controllers start from your own template, and Studio's default text never overwrites it.</p></article>
+  <article><h3><i></i>Safe install and update</h3><p>Updating the runtime removes files that are no longer shipped and backs up any file you edited by hand before replacing it.</p></article>
+  <article><h3><i></i>Light on slow machines</h3><p>Only changed modules are re-read, the network is only rebuilt when its declarations change, the wait before compiling adapts to the computer, and animations can be turned off.</p></article>
+</div>
+
+<h2>Player data that cannot be corrupted</h2>
+<div class="feat">
+  <article><h3><i></i>Template checks all the way down</h3><p>Every write is checked against your template, including nested tables, so a typo or a wrong type never reaches a save.</p></article>
+  <article><h3><i></i>No NaN, no infinity</h3><p>A division by zero cannot break a profile: values DataStores cannot store are refused at the write.</p></article>
+  <article><h3><i></i>Migrations on a copy</h3><p>If a migration fails halfway, the saved data is left untouched and the player is asked to rejoin. Data is never saved half-upgraded.</p></article>
+  <article><h3><i></i>Template change warnings<span class="new">new</span></h3><p>Remove a field or change its type, and Branch Studio warns that saved data will not follow on its own, until you add a migration.</p></article>
+  <article><h3><i></i>Writes on the way out</h3><p><code>PlayerRemoving</code> hooks can still change the leaving player's data, and those writes are saved with the session.</p></article>
+  <article><h3><i></i>Observers that see everything</h3><p><code>Observe("stats.kills")</code> fires even when the whole <code>stats</code> table is replaced, and <code>"friends.12345"</code> reaches UserId-keyed dictionaries.</p></article>
+  <article><h3><i></i>A DataStore browser that protects players</h3><p>Browse stores as a fast virtual tree, restore old versions, watch the 4 MB limit. ProfileStore session locks are respected, a player's newer progress is never overwritten, and live data is read-only until you unlock writes.</p></article>
+</div>
+
+<h2>A framework that stays out of your way</h2>
+<div class="feat">
+  <article><h3><i></i>Segments by name</h3><p>Any module named <code>…Service</code> or <code>…Controller</code>, at any depth and in any casing, is a segment. Everything else is a helper. Services can live inside services.</p></article>
+  <article><h3><i></i>A strict, readable lifecycle</h3><p><code>Init</code> in dependency order, then every <code>Start</code> in its own thread, then player and frame hooks sharing one engine connection per hook type.</p></article>
+  <article><h3><i></i>Failures you can see</h3><p>A slow <code>Init</code> warns after 5 seconds, a failed dependency is named, two segments with one name are an error, and <code>Branch.Netwrok</code> fails loudly instead of returning nil.</p></article>
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

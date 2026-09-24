@@ -52,6 +52,10 @@
     Casing tools (PascalCase, camelCase, snake_case, SNAKE_CASE or your own prefix) rename everything the same way and never give two segments the same name.
   </li>
   <li><strong>Safe install and update.</strong> The plugin remembers which runtime files it installed, with a fingerprint of each. On update, files that are no longer shipped are removed, and files you edited by hand are copied to <code>ServerStorage.BranchBackups</code> before they are replaced. Your generated files and settings are kept. A Branch 1 runtime is never touched until you press <b>Update</b>.</li>
+  <li><strong>Live network profiler.</strong> While you Play, a <b>Branch Network (live)</b> window lists every event in both directions: sends per second, bytes per second and share of the traffic, busiest first. Below that are hints for numbers that could travel smaller (for example "always a whole number from 0 to 200: declare it as u8 instead of u32"). The counters only run in Studio.</li>
+  <li><strong>Live DataStores are read-only.</strong> Browsing real data is safe by default. To edit, save, restore a version or delete, click the lock twice: that allows writes to live data until Studio closes. <b>Try sample</b> stays editable.</li>
+  <li><strong>Data template warnings.</strong> The plugin remembers your data template's shape. If a field is removed or changes type (a number becoming a string, say), saved player data will not follow on its own, so a warning in Problems asks for a migration; click it once the migration is written. New fields need nothing: ProfileStore adds them to old saves.</li>
+  <li><strong>Honest renames.</strong> References the rename could not update safely — a path through a variable, a chain split across lines — are listed in the Log, with a click to open each one.</li>
   <li><strong>Checks engine names.</strong> A mistyped <code>Enum(...)</code> is an error (the last working network stays), and an unknown <code>Instance(...)</code> class is a warning.</li>
   <li><strong>Light on slow machines.</strong>
     <ul>
@@ -88,6 +92,7 @@
 <tr><td>Templates</td><td>New service / New controller</td><td>built in</td><td>The text of new modules; <code>{NAME}</code> becomes the module's name.</td></tr>
 <tr><td>Casing</td><td>Custom prefix</td><td><code>omo</code></td><td>Prefix for the custom casing button.</td></tr>
 <tr><td>Editor</td><td>Reduce motion</td><td>off</td><td>No animations in the plugin window.</td></tr>
+<tr><td>Editor</td><td>Live network profiler</td><td>on</td><td>While you Play, a window shows each event's traffic and smaller-type hints.</td></tr>
 <tr><td>Editor</td><td>Compile delay (s)</td><td>0.4</td><td>Quiet time after typing before compiling.</td></tr>
 </tbody></table></div>
 

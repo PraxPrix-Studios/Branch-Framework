@@ -52,6 +52,18 @@ Branch.Network.OnReject                    -- on the server</code></pre>
 <div class="sig">Server.Service.Event.<b>FireExcept</b>(except: Player, ...args)</div>
 <p>Sends to every player but one.</p>
 </div>
+<div class="api" id="firenear">
+<h3>Event.FireNear <span class="tag">server</span></h3>
+<div class="sig">Server.Service.Event.<b>FireNear</b>(position: Vector3, radius: number, ...args)</div>
+<p>Sends to every player whose <code>Character.PrimaryPart</code> is within <code>radius</code> studs of <code>position</code>. Players without a character are skipped.</p>
+</div>
+<div class="api" id="forget">
+<h3>Event.Forget <span class="tag">server · client · Delta only</span></h3>
+<div class="sig">Service.Event.<b>Forget</b>(key)      -- Delta with Key
+Service.Event.<b>Forget</b>()         -- Delta without Key</div>
+<p>With a <code>Key</code>: drops the state kept for that key on this side and on every receiver (no listener is called), so the next send for that key is full. Call it when the object is gone. Without a <code>Key</code>: the next send to every recipient is full.</p>
+</div>
+<div class="note"><b>Latest and Delta events</b> keep the same functions. With <code>Latest</code>, the values are written when the frame ships; with <code>Delta</code>, <code>FireAll</code>, <code>FireList</code>, <code>FireExcept</code> and <code>FireNear</code> write to each player separately. See <a href="../guide/network.html#savers">Send less</a>.</div>
 <div class="api" id="client-on">
 <h3>Event.On <span class="tag">client</span></h3>
 <div class="sig">Client.Service.Event.<b>On</b>(listener: (...args) -&gt; ()): () -&gt; ()</div>
@@ -88,7 +100,7 @@ Branch.Network.OnReject                    -- on the server</code></pre>
 <div class="api" id="onreject">
 <h3>Branch.Network.OnReject <span class="tag">server</span></h3>
 <div class="sig">Branch.Network.<b>OnReject</b>(handler: (player: Player, reason: string) -&gt; ()): () -&gt; ()</div>
-<p>Called when a client sends a packet that fails validation: wrong sizes, out-of-range values, NaN, wrong Instance classes, forged lengths or oversized packets. The packet is dropped either way. Use it to log or kick exploiters. Returns a function that removes the handler.</p>
+<p>Called when a client sends a packet that fails validation: wrong sizes, out-of-range values, NaN, wrong Instance classes, forged lengths or oversized packets. The packet is dropped either way. Also called (at most once a second per player and event) when a client goes over an event's <code>Rate</code>; that reason starts with <code>rate limit:</code>. Use it to log or kick exploiters. Returns a function that removes the handler.</p>
 <pre><code>Branch.Network.OnReject(function(player, reason)
 	warn(`{player.Name}: {reason}`)
 end)</code></pre>

@@ -46,6 +46,10 @@ return CombatService</code></pre>
 <tr><td><code>Data</code></td><td>What travels (see below).</td><td>Nothing</td></tr>
 <tr><td><code>Return</code></td><td>What a function returns. Its presence makes the entry a function.</td><td>None</td></tr>
 <tr><td><code>Unpack</code></td><td><code>true</code>: a struct travels as separate arguments instead of a table, and no table is built on either side.</td><td><code>false</code></td></tr>
+<tr><td><code>Latest</code></td><td><code>true</code>: several sends to the same recipient in one frame send only the last one. See <a href="#latest">Latest</a>.</td><td><code>false</code></td></tr>
+<tr><td><code>Delta</code></td><td><code>true</code>: only the struct fields that changed since the last send travel. See <a href="#delta">Delta</a>.</td><td><code>false</code></td></tr>
+<tr><td><code>Key</code></td><td>With <code>Delta</code>: the field that tells objects apart, such as <code>"id"</code>.</td><td>none</td></tr>
+<tr><td><code>Rate</code></td><td><code>"15/s"</code> or <code>"600/m"</code>: how many a client may send. See <a href="#rate">Rate</a>.</td><td>no limit</td></tr>
 </tbody></table></div>
 <p>A typo in an option name is a compile error that suggests the right one: <code>Tpye</code> gives <em>did you mean "Type"?</em></p>
 
@@ -61,6 +65,44 @@ return CombatService</code></pre>
 </tbody></table></div>
 <p>Every type you can use, from <code>u8</code> to <code>{ [K]: V }</code>, is listed in <a href="../api/types.html">Network types</a>.</p>
 
+<h2 id="savers">Send less</h2>
+<h3 id="latest">Latest: only the newest value</h3>
+<p>For state that is sent often — a position, health, an animation — only the newest value matters. With <code>Latest = true</code>, if you fire the same event to a player three times in one frame, only the third one is sent; the two older ones are dropped before they cost anything.</p>
+<pre><code>Position = { From = "Server", Type = "Unreliable", Latest = true, Data = { id = "u16", pos = "vector" } },</code></pre>
+<ul>
+  <li><strong>Per recipient.</strong> "Last" means per player. After <code>FireAll</code>, a newer <code>Fire</code> to one player also reaches that player; a <code>FireAll</code> after single <code>Fire</code>s replaces them.</li>
+  <li><strong>End of the frame.</strong> Latest events are written when the frame ships, so they arrive after the frame's other events.</li>
+  <li><strong>Not for functions.</strong> Every function call needs its own answer, so <code>Latest</code> only works on events.</li>
+</ul>
+
+<h3 id="delta">Delta: only what changed</h3>
+<p>With <code>Delta = true</code>, a struct travels in full the first time, and after that only the fields that changed since the last send to that recipient. A character standing still costs almost nothing, and a changed boolean costs no bytes at all: its "changed" bit already says it flipped.</p>
+<pre><code>Unit = { From = "Server", Delta = true, Key = "id", Data = { id = "u16", pos = "vector", hp = "u8", stunned = "boolean" } },</code></pre>
+<ul>
+  <li><strong><code>Key</code></strong> names the field that tells objects apart. Each key has its own state, so one event can carry many units. Without <code>Key</code>, there is one state per recipient.</li>
+  <li><strong>Listeners always get the full struct.</strong> The receiver fills in the unchanged fields itself, so your code never sees a partial value.</li>
+  <li><strong><code>Forget(key)</code></strong> drops the state kept for a key — call it when the object is gone, so neither side keeps it in memory. The next send for that key goes out in full. Without <code>Key</code>, <code>Forget()</code> makes the next send to every player full.</li>
+  <li><strong>Reliable only.</strong> A lost unreliable packet would leave the receiver with the wrong state, so the compiler refuses <code>Delta</code> on <code>Unreliable</code> events.</li>
+  <li><strong>Tables inside the struct</strong> (arrays, maps, nested structs) are sent whenever the struct is sent: comparing them would cost more than it saves.</li>
+  <li><strong><code>FireAll</code></strong> on a Delta event writes to each player separately, because every player can hold a different state (someone who just joined gets the full struct).</li>
+</ul>
+<p><code>Latest</code> and <code>Delta</code> work together: only the frame's newest value is compared and sent.</p>
+
+<h3 id="near">FireNear: only players nearby</h3>
+<pre><code>Net.Explosion.FireNear(position, 150, damage)   -- players whose character is within 150 studs</code></pre>
+<p>Every server → client event has <code>FireNear(position, radius, ...)</code>. It checks each player's <code>Character.PrimaryPart</code>; players without a character are skipped. In a big map, the savings grow with the number of players.</p>
+
+<h2 id="rate">Rate: limit what clients send</h2>
+<p>Validation checks that a packet is correct. <code>Rate</code> also checks how often a player sends it, so an exploiter cannot spam valid events.</p>
+<pre><code>Attack = { From = "Client", Rate = "10/s", Data = { dir = "vector" } },
+Buy    = { Data = "string(..32)", Return = "boolean", Rate = "30/m" },</code></pre>
+<ul>
+  <li><strong>How it counts.</strong> Each player gets a bucket of that many sends, refilled at that rate. A short burst up to the limit is fine.</li>
+  <li><strong>Over the limit</strong>, events are dropped before any listener sees them, and a function answers "failed", so the client's <code>Invoke</code> errors.</li>
+  <li><strong><code>OnReject</code></strong> hears about it at most once a second per player and event, with a reason that starts with <code>rate limit:</code>.</li>
+  <li><strong>Only on <code>From = "Client"</code></strong> events and functions: the server does not need a limit on itself.</li>
+</ul>
+
 <h2>Use</h2>
 <pre><code>-- server
 local Net = Branch.Network.Server.CombatService
@@ -69,6 +111,7 @@ Net.Damage.Fire(player, 25, true)                 -- one player
 Net.Damage.FireAll(25, true)                      -- everyone
 Net.Damage.FireList({ a, b }, 25, true)           -- a list of players
 Net.Damage.FireExcept(player, 25, true)           -- everyone but one
+Net.Damage.FireNear(position, 100, 25, true)      -- players within 100 studs
 Net.Hit.On(function(player, hit) end)             -- client -> server event
 Net.Buy.On(function(player, item) return true end) -- a function's handler
 
@@ -107,6 +150,14 @@ end)</code></pre></li>
   <li><strong>Errors in your own <code>Sync</code> listener</strong> are your game's bug, not the player's. The error is printed with its traceback, <code>OnReject</code> is not called, and the rest of the packet is still delivered.</li>
   <li><strong>Before a listener exists.</strong> Events that arrive before anyone listens are queued (256 by default) and delivered when a listener connects. A function call that finds its queue full is answered with a failure instead of hanging.</li>
 </ul>
+
+<h2>See the traffic</h2>
+<p>While you Play in Studio, Branch Studio opens a <b>Branch Network (live)</b> window. It shows:</p>
+<ul>
+  <li><strong>Every event, both directions:</strong> how many times it is sent per second, its bytes per second and its share of the traffic, busiest first.</li>
+  <li><strong>Smaller types.</strong> Hints such as "<code>hp</code> is always a whole number from 0 to 200: declare it as <code>u8</code> instead of <code>u32</code> to save 3 B per value".</li>
+</ul>
+<p>The counters only run in Studio: in a live server they are switched off. Turn the window off in <b>Settings → Editor → Live network profiler</b>.</p>
 
 <h2>Where the plugin looks</h2>
 <ul>
