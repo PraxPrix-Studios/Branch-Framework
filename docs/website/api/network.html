@@ -20,6 +20,7 @@
 <pre><code>Branch.Network.Server.&lt;Service&gt;.&lt;Event&gt;   -- on the server
 Branch.Network.Client.&lt;Service&gt;.&lt;Event&gt;   -- on a client
 Branch.Network.OnReject                    -- on the server</code></pre>
+<p>The server half is generated into <code>ServerScriptService.BranchNetworkServer</code>, so players never download it; you always use it through <code>Branch.Network</code>.</p>
 <p>In the signatures below, <code>...args</code> stands for the arguments your <code>Data</code> declares: nothing, one value, a tuple, a struct table, or the struct's fields with <code>Unpack</code>. See <a href="../guide/network.html#declare">Declare</a>.</p>
 <div class="note">
   <p><b>When it works:</b></p>

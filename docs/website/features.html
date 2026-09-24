@@ -52,6 +52,7 @@
 <div class="feat">
   <article><h3><i></i>Everything from clients is validated</h3><p>Bounds, ranges, NaN and infinity, enum values, Instance classes and array lengths are checked on the server before any listener runs. Lengths are checked before anything is allocated.</p></article>
   <article><h3><i></i>Rate limits<span class="new">new</span></h3><p>One word stops exploiters spamming valid events. Extra events are dropped, functions answer "failed", and <code>OnReject</code> tells you who.</p><pre><code>Attack = { From = "Client", Rate = "10/s", Data = { dir = "vector" } }</code></pre></article>
+  <article><h3><i></i>Server code never reaches players<span class="new">new</span></h3><p>The generated server half lives in ServerScriptService: players do not download it, and exploiters cannot read the server's checks.</p></article>
   <article><h3><i></i>OnReject</h3><p>One place to hear about every malformed packet and every rate-limit breach, to log or kick.</p></article>
 </div>
 

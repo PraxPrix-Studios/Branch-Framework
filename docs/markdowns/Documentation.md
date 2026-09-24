@@ -135,7 +135,7 @@ return CombatService
 ```lua
 -- server
 local Net = Branch.Network.Server.CombatService
-Net.Damage.Fire(player, 25, true)       -- also FireAll / FireList / FireExcept
+Net.Damage.Fire(player, 25, true)       -- also FireAll / FireList / FireExcept / FireNear(position, radius, ...)
 Net.Buy.On(function(player, item) return true end)
 
 -- client
@@ -157,6 +157,25 @@ local ok = Net.Buy.Invoke("sword")
 - **Validation.** The server checks everything a client sends before any listener sees it. Malformed packets are reported through `Branch.Network.OnReject`.
 - **Order.** Order is exact for every recipient.
 - **Errors stay contained.** A listener that errors is reported like any script error; the rest of the packet still arrives.
+
+**Send less, and limit what clients send** (options on any event):
+
+| Option | What it does |
+|---|---|
+| `Latest = true` | Several sends to the same recipient in one frame send only the newest. Latest values go out at the end of the frame. Not for functions. |
+| `Delta = true` | A struct travels in full once, then only the fields that changed since the last send to that recipient; a changed boolean costs no bytes. Reliable events only. Listeners always get the full struct. |
+| `Key = "id"` | With `Delta`: the field that tells objects apart, so one event carries many objects, each with its own state. `Event.Forget(key)` drops a key's state on both sides. |
+| `Rate = "10/s"` | On `From = "Client"` events and functions: sends over the limit are dropped (functions answer "failed"), and `OnReject` hears about it with a reason starting `rate limit:`. |
+
+```lua
+Unit   = { From = "Server", Latest = true, Delta = true, Key = "id", Data = { id = "u16", pos = "vector", hp = "u8" } },
+Attack = { From = "Client", Rate = "10/s", Data = { dir = "vector" } },
+```
+
+**Where the code lives.** `Branch.Network` in ReplicatedStorage holds the entry module, the client half and the remotes; the server half is generated into `ServerScriptService.BranchNetworkServer`, so players never download it (or read the server's checks).
+
+**See the traffic.** While you Play in Studio, Branch Studio opens a live network profiler: sends and bytes per second for every event, its share of the traffic, and hints for numbers that could use a smaller type. The counters only run in Studio.
+
 
 ---
 

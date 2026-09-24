@@ -159,6 +159,13 @@ end)</code></pre></li>
 </ul>
 <p>The counters only run in Studio: in a live server they are switched off. Turn the window off in <b>Settings → Editor → Live network profiler</b>.</p>
 
+<h2>Where the code lives</h2>
+<ul>
+  <li><strong><code>ReplicatedStorage.Packages.Branch.Network</code></strong>: the entry module, the client half and the two remotes.</li>
+  <li><strong><code>ServerScriptService.BranchNetworkServer</code></strong>: the server half. Players never download it, so a big game does not make every player load the server's code, and exploiters cannot read the server's checks. Its <code>Root</code> value points back at <code>Branch.Network</code>.</li>
+</ul>
+<p>Branch Studio writes both and keeps them in sync. Places compiled by earlier versions are moved over on the next compile.</p>
+
 <h2>Where the plugin looks</h2>
 <ul>
   <li><strong>Which folders.</strong> Branch Studio reads declarations from the roots in <b>Settings → Paths</b> (<code>ServerScriptService.Services</code> by default). If your game passes other folders to <code>Branch:Start</code>, set them there too: the plugin cannot know what the game will pass at run time.</li>
