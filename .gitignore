@@ -1,0 +1,17 @@
+# build output
+*.rbxm
+*.rbxl
+*.rbxlx
+*.lock
+
+# pesde / rokit
+roblox_packages/
+luau_packages/
+lune_packages/
+.pesde/
+
+# editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

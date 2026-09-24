@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Branch.Data.Server · Branch</title>
+<meta name="description" content="API reference for Branch.Data.Server: Start, Get, Set, Update, Increment, Insert, Remove, Observe, Await, OnLoaded, Peek, Send and more.">
+<link rel="icon" href="../assets/mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-root="../" data-page="api/data-server">
+<div class="layout">
+<aside class="side" id="sidebar" aria-label="Documentation"></aside>
+<main class="doc">
+<div class="eyebrow">api/data-server</div>
+<h1>Branch.<wbr>Data.<wbr>Server</h1>
+<p class="lead">Player data on the server. Built on DataService and ProfileStore. For the ideas behind it, read <a href="../guide/data.html">Player data</a>.</p>
+<pre><code>local Data = Branch.Data.Server</code></pre>
+<p><code>path</code> is a dot path such as <code>"stats.kills"</code>. With Branch Studio and a data template set, paths autocomplete.</p>
+<div class="note">
+  <p><b>Before a player's data loads:</b></p>
+  <ul>
+    <li><code>Get</code> returns <code>nil</code>;</li>
+    <li><code>Set</code>, <code>Update</code>, <code>Increment</code>, <code>Insert</code> and <code>Remove</code> raise an error that tells you to wait with <code>Await</code> or <code>OnLoaded</code>.</li>
+  </ul>
+</div>
+
+<div class="api" id="start">
+<h3>Data.Start</h3>
+<div class="sig">Data.<b>Start</b>(config: Config)
+
+type Config = {
+	Template: { [string]: any },
+	Store: string?,
+	KeyPrefix: string?,
+	Mock: boolean?,
+	DontSave: boolean?,
+	Migrations: { (data: any) -> () }?,
+	Leaderstats: ({ string } | { [string]: string })?,
+}</div>
+<p>Starts player data. Call it once, early (for example in a <code>PlayerService:Init</code>).</p>
+<ul class="params">
+  <li><code>Template</code> — the shape and starting values of every player's data. Every write is checked against it.</li>
+  <li><code>Store</code> — the ProfileStore name. Default <code>"PlayerData"</code>.</li>
+  <li><code>KeyPrefix</code> — the DataStore key prefix. Default <code>"PLAYER_"</code>.</li>
+  <li><code>Mock</code> — keep data in memory only, never touching DataStores. Handy in Studio.</li>
+  <li><code>DontSave</code> — load real data but never write it.</li>
+  <li><code>Migrations</code> — <code>Migrations[n]</code> upgrades a profile from version <code>n-1</code> to <code>n</code>. Run on a copy; see <a href="../guide/data.html#migrations">Migrations</a>.</li>
+  <li><code>Leaderstats</code> — a list of paths (the display name is the last part of the path) or a map of path → display name.</li>
+</ul>
+<p><b>Errors</b> if called twice or without a <code>Template</code> table.</p>
+</div>
+
+<div class="api" id="get">
+<h3>Data.Get</h3>
+<div class="sig">Data.<b>Get</b>(player: Player, path: string?): any</div>
+<p>The value at <code>path</code>, or the whole data table without a path. <code>nil</code> until the data loads. Never errors.</p>
+</div>
+
+<div class="api" id="set">
+<h3>Data.Set</h3>
+<div class="sig">Data.<b>Set</b>(player: Player, path: string, value: any)</div>
+<p>Writes <code>value</code> at <code>path</code> and syncs it to the player's client.</p>
+<p><b>Errors</b> if the value does not fit the template at that path (checked all the way down), or contains NaN or infinity.</p>
+</div>
+
+<div class="api" id="update">
+<h3>Data.Update</h3>
+<div class="sig">Data.<b>Update</b>(player: Player, path: string, transform: (old: any) -> any): any</div>
+<p>Calls <code>transform</code> with the current value and writes what it returns. Returns the new value. Checked like <code>Set</code>.</p>
+<pre><code>Data.Update(player, "stats.best", function(old) return math.max(old, score) end)</code></pre>
+</div>
+
+<div class="api" id="increment">
+<h3>Data.Increment</h3>
+<div class="sig">Data.<b>Increment</b>(player: Player, path: string, delta: number?): number</div>
+<p>Adds <code>delta</code> (default <code>1</code>; can be negative) to a number and returns the new value.</p>
+<p><b>Errors</b> if the value is not a number, or the result is not finite.</p>
+</div>
+
+<div class="api" id="insert">
+<h3>Data.Insert</h3>
+<div class="sig">Data.<b>Insert</b>(player: Player, path: string, value: any, index: number?)</div>
+<p>Inserts into the array at <code>path</code>: at the end, or at <code>index</code>. If the template's array holds an example element, <code>value</code> must match its shape. NaN and infinity are always refused.</p>
+</div>
+
+<div class="api" id="remove">
+<h3>Data.Remove</h3>
+<div class="sig">Data.<b>Remove</b>(player: Player, path: string, index: number): any</div>
+<p>Removes the element at <code>index</code> from the array at <code>path</code> and returns it.</p>
+</div>
+
+<div class="api" id="observe">
+<h3>Data.Observe</h3>
+<div class="sig">Data.<b>Observe</b>(player: Player, path: string, callback: (new: any, old: any) -> ()): () -> ()</div>
+<p>Calls <code>callback(value, nil)</code> as soon as the data is loaded, then <code>callback(new, old)</code> after every change, including when a parent table is replaced. Returns a function that stops observing.</p>
+</div>
+
+<div class="api" id="await">
+<h3>Data.Await <span class="tag">yields</span></h3>
+<div class="sig">Data.<b>Await</b>(player: Player): PlayerData?</div>
+<p>Yields until the player's data is loaded and returns it. Returns <code>nil</code> if the player leaves first.</p>
+</div>
+
+<div class="api" id="isloaded">
+<h3>Data.IsLoaded</h3>
+<div class="sig">Data.<b>IsLoaded</b>(player: Player): boolean</div>
+<p>Whether the player's data is loaded.</p>
+</div>
+
+<div class="api" id="onloaded">
+<h3>Data.OnLoaded</h3>
+<div class="sig">Data.<b>OnLoaded</b>(callback: (player: Player, data: PlayerData) -> ()): () -> ()</div>
+<p>Calls <code>callback</code> for every player whose data is already loaded, then once for each player whose data loads later. Never twice for the same load. Returns a function that disconnects it.</p>
+</div>
+
+<div class="api" id="peek">
+<h3>Data.Peek <span class="tag">yields</span></h3>
+<div class="sig">Data.<b>Peek</b>(userId: number): PlayerData?</div>
+<p>Reads the saved data of any player, online or not, without taking their session lock. <code>nil</code> if they have no data.</p>
+</div>
+
+<div class="api" id="reset">
+<h3>Data.Reset</h3>
+<div class="sig">Data.<b>Reset</b>(player: Player)</div>
+<p>Wipes the player's profile and kicks them, so their next join starts from the template.</p>
+</div>
+
+<div class="api" id="send">
+<h3>Data.Send <span class="tag">yields</span></h3>
+<div class="sig">Data.<b>Send</b>(userId: number, key: string, payload: { any }): boolean</div>
+<p>Sends a message to a player's profile from any server. It is delivered when the player is online (now or on their next join), to the handler registered with <code>OnMessage</code> for that <code>key</code>. Returns whether it was sent.</p>
+</div>
+
+<div class="api" id="onmessage">
+<h3>Data.OnMessage</h3>
+<div class="sig">Data.<b>OnMessage</b>(key: string, handler: (player: Player, payload: { any }) -> boolean?)</div>
+<p>Handles messages sent with <code>Send</code> under <code>key</code>. One handler per key: registering a second one for the same key is an error.</p>
+<ul class="params">
+  <li><strong>Handled.</strong> If the handler returns anything but <code>false</code>, the message is marked handled and removed.</li>
+  <li><strong>Not handled.</strong> If it returns <code>false</code>, the message stays and is delivered again later.</li>
+  <li><strong>Early messages.</strong> Messages that arrive before the handler exists wait for it.</li>
+</ul>
+<pre><code>Data.OnMessage("Gift", function(player, payload)
+	Data.Insert(player, "items", payload[1])
+	return true
+end)</code></pre>
+</div>
+
+<div class="api" id="getprofile">
+<h3>Data.GetProfile</h3>
+<div class="sig">Data.<b>GetProfile</b>(player: Player): Profile?</div>
+<p>The underlying ProfileStore profile, or <code>nil</code>. An escape hatch: writes made through it skip Branch's checks and syncing.</p>
+</div>
+</main>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

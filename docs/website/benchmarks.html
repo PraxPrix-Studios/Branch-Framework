@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Benchmarks · Branch</title>
+<meta name="description" content="Branch Network against NetRay and Blink: every case measured in Lune and in the real Roblox engine.">
+<link rel="icon" href="assets/mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="assets/site.css">
+<style>
+.bench .wrap{max-width:920px;margin:0 auto}
+.bench a{color:var(--cyan)}
+.bench code{font:500 .86em var(--mono);background:var(--raise);padding:1px 6px;border-radius:5px}
+.bench .hero{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:24px;align-items:center;padding-block:56px 40px}
+.bench .mark{width:64px;height:64px;border-radius:18px;background:var(--grad);display:grid;place-items:center;box-shadow:0 10px 40px -12px color-mix(in srgb,var(--violet) 60%,transparent)}
+.bench .mark svg{width:38px;height:38px}
+.bench .hero h1{font:700 clamp(34px,6vw,58px)/1.02 var(--display);letter-spacing:-.02em;margin:22px 0 14px;text-wrap:balance}
+.bench .hero h1 em{font-style:normal;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.bench .hero p{color:var(--muted);max-width:56ch;margin:0}
+.bench .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}
+.bench .meta span{font:500 12px/1 var(--mono);color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:7px 11px}
+.bench .meta b{color:var(--ink);font-weight:600}
+.bench .art{width:100%;height:auto}
+@media (max-width:720px){.bench .hero{grid-template-columns:1fr}
+.bench .art{display:none}}
+.bench .graph{position:relative;padding-left:40px}
+.bench .graph::before{content:"";position:absolute;left:12px;top:6px;bottom:0;width:3px;border-radius:3px;background:linear-gradient(180deg,var(--violet),var(--cyan) 55%,color-mix(in srgb,var(--cyan) 0%,transparent))}
+.bench .commit{position:relative}
+.bench .commit::before{content:"";position:absolute;left:-35px;top:.55em;width:13px;height:13px;border-radius:50%;background:var(--ground);border:3px solid var(--cyan);box-sizing:border-box}
+.bench h2.commit::before{left:-37px;width:17px;height:17px;top:.35em;border-color:var(--violet);background:var(--violet);box-shadow:0 0 0 5px var(--ground)}
+.bench h2{font:700 clamp(24px,4vw,32px)/1.15 var(--display);letter-spacing:-.01em;margin:64px 0 10px;text-wrap:balance}
+.bench h3{font:600 21px/1.3 var(--body);margin:0 0 6px;text-wrap:balance}
+.bench .lead{color:var(--muted);max-width:64ch}
+.bench .how{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin:18px 0 6px}
+.bench .how ul{margin:0;padding-left:18px;display:grid;gap:6px;color:var(--muted)}
+.bench .how li b{color:var(--ink)}
+.bench .legend{display:flex;flex-wrap:wrap;gap:16px;margin:14px 0 0;font-size:14px;color:var(--muted)}
+.bench .legend i{display:inline-block;width:22px;height:4px;border-radius:3px;vertical-align:middle;margin-right:7px}
+.bench .case{padding-block:34px 8px}
+.bench .ref{font:500 12px/1 var(--mono);color:var(--cyan);margin-bottom:10px;display:flex;gap:8px;align-items:center}
+.bench .ref span{color:var(--faint)}
+.bench .desc{color:var(--muted);margin:0 0 16px;max-width:64ch}
+.bench .verdict{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 16px}
+.bench .chip{font:600 14px/1 var(--body);padding:9px 13px;border-radius:999px;border:1px solid color-mix(in srgb,var(--good) 45%,transparent);color:var(--good)}
+.bench .chip b{font:600 15px var(--mono)}
+.bench .chip.tie{border-color:var(--line);color:var(--muted)}
+.bench .fork{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 18px 14px}
+.bench .fork .axis{font:500 11px var(--mono);color:var(--faint);letter-spacing:.04em;margin:0 0 12px}
+.bench .row{display:grid;grid-template-columns:96px minmax(0,1fr);align-items:center;height:34px}
+.bench .row .lib{font:500 13px var(--body);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bench .row.b .lib{color:var(--ink);font-weight:700}
+.bench .lane{position:relative;height:34px;margin-right:104px}
+.bench .stem{position:absolute;left:0;top:16px;height:3px;border-radius:3px;background:var(--c)}
+.bench .stem::after{content:"";position:absolute;right:-6px;top:-5px;width:13px;height:13px;border-radius:50%;background:var(--ground);border:3px solid var(--c);box-sizing:border-box}
+.bench .row.b .stem::after{background:var(--cyan);border-color:var(--cyan)}
+.bench .val{position:absolute;top:7px;font:600 13px var(--mono);white-space:nowrap;font-variant-numeric:tabular-nums}
+.bench .row.b .val{color:var(--ink)}
+.bench .row:not(.b) .val{color:var(--muted)}
+.bench .c-branch{--c:var(--violet)}
+.bench .c-branch .stem{background:var(--grad)}
+.bench .c-netray{--c:var(--netray)}
+.bench .c-blink{--c:var(--blink)}
+.bench .c-netrayfull{--c:var(--netrayfull)}
+.bench .c-netrayfull .stem{background:repeating-linear-gradient(90deg,var(--netray) 0 7px,transparent 7px 11px)}
+@media (max-width:520px){.bench .row{grid-template-columns:70px minmax(0,1fr)}
+.bench .lane{margin-right:86px}
+.bench .val{font-size:12px}}
+.bench .tbl{overflow-x:auto;margin-top:14px;border:1px solid var(--line);border-radius:12px}
+.bench table{border-collapse:collapse;width:100%;min-width:520px;font-size:13px}
+.bench th,.bench td{padding:9px 12px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+.bench th:first-child,.bench td:first-child{text-align:left}
+.bench th{font:500 11px/1.3 var(--mono);letter-spacing:.05em;text-transform:uppercase;color:var(--faint);background:var(--raise)}
+.bench td{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.bench td:first-child{font-family:var(--body)}
+.bench tr:last-child td{border-bottom:0}
+.bench tr.b td{font-weight:700;color:var(--ink)}
+.bench .notes{color:var(--muted);font-size:15px;padding-left:18px;margin:14px 0 0}
+.bench .notes li{margin-bottom:5px}
+.bench .merge{display:grid;gap:0;margin-top:18px;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--surface)}
+.bench .mrow{display:grid;grid-template-columns:minmax(0,1fr) 120px 120px;gap:10px;align-items:center;padding:11px 16px;border-bottom:1px solid var(--line)}
+.bench .mrow:last-child{border-bottom:0}
+.bench .mrow .n{display:flex;gap:10px;align-items:baseline;min-width:0}
+.bench .mrow .n code{background:none;padding:0;color:var(--cyan);font-size:12px;flex:none}
+.bench .mrow .n span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bench .mrow .p{font:600 15px var(--mono);color:var(--good);text-align:right}
+.bench .mrow .p.tie{color:var(--muted);font-weight:500}
+.bench .mhead{background:var(--raise);font:500 11px var(--mono);letter-spacing:.05em;text-transform:uppercase;color:var(--faint);padding-block:9px}
+.bench .mhead .p{font:500 11px var(--mono);color:var(--faint)}
+@media (max-width:560px){.bench .mrow{grid-template-columns:minmax(0,1fr) 78px 78px}
+.bench .mrow .n code{display:none}}
+.bench .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:18px 0}
+.bench .stat{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px}
+.bench .stat b{display:block;font:700 26px/1 var(--display);background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.bench .stat span{font-size:14px;color:var(--muted)}
+.bench .branches{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:22px 30px;margin-top:10px}
+.bench .bl h4{font:500 13px var(--mono);color:var(--cyan);margin:0 0 10px}
+.bench .bl h4 span{color:var(--faint)}
+.bench .bl ol{list-style:none;margin:0;padding:0 0 0 22px;position:relative}
+.bench .bl ol::before{content:"";position:absolute;left:5px;top:8px;bottom:8px;width:2px;background:var(--line)}
+.bench .bl li{position:relative;font-size:14px;color:var(--muted);padding-block:4px}
+.bench .bl li::before{content:"";position:absolute;left:-21px;top:10px;width:10px;height:10px;border-radius:50%;background:var(--ground);border:2px solid var(--cyan);box-sizing:border-box}
+.bench .bl li strong{color:var(--ink);font-weight:600}
+.bench p.body{max-width:66ch}
+.bench .foot{margin-top:70px;padding-top:22px;border-top:1px solid var(--line);color:var(--faint);font-size:14px}
+.bench pre{font:13px/1.5 var(--mono);background:var(--surface);border:1px solid var(--line);padding:14px 16px;border-radius:12px;overflow-x:auto;color:var(--ink)}
+@media (prefers-reduced-motion:no-preference){.bench .stem{transition:width .6s cubic-bezier(.2,.8,.2,1)}}
+.bench .case{border-top:0;margin-top:0}
+.bench .hero h1{overflow-wrap:normal;font-size:clamp(30px,4.4vw,54px)}
+.bench .hero{grid-template-columns:minmax(0,1fr) minmax(0,240px)}
+.bench .wrap{max-width:100%}
+.bench .graph{min-width:0}
+.bench h2::before{display:none}
+.bench h2.commit::before{display:block}
+.bench .hero{padding-top:8px}
+</style>
+</head>
+<body data-root="" data-page="benchmarks">
+<div class="layout">
+<aside class="side" id="sidebar" aria-label="Documentation"></aside>
+<main class="doc bench">
+<div class="wrap">
+<header class="hero">
+  <div>
+    <div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><circle cx="7" cy="5" r="2.3" fill="#fff" stroke="none"/><circle cx="7" cy="19" r="2.3" fill="#fff" stroke="none"/><circle cx="17" cy="7" r="2.3" fill="#fff" stroke="none"/><path d="M7 7v10"/><path d="M17 9.3c0 4-10 3-10 7.7"/></svg></div>
+    <h1>How fast is <em>Branch Network</em>?</h1>
+    <p>Branch Network is the compiled networking layer of Branch. You declare events on your services, and the Branch Studio plugin writes the serialisation code for them. We raced it against the two best-known libraries of its kind: same schemas, same data, same machine.</p>
+    <div class="meta"><span>measured <b>24 Sep 2026</b></span><span>branch <b>2.0.0</b></span><span>netray <b>0.1.1</b></span><span>blink <b>v0.17</b></span></div>
+  </div>
+  <svg class="art" viewBox="0 0 300 300" aria-hidden="true">
+    <defs><linearGradient id="g" gradientUnits="userSpaceOnUse" x1="40" y1="10" x2="240" y2="290"><stop offset="0" stop-color="var(--violet)"/><stop offset="1" stop-color="var(--cyan)"/></linearGradient></defs>
+    <!-- every line starts and ends on a node: trunk, a feature branch that merges back,
+         a side branch off it, and an abandoned branch -->
+    <g fill="none" stroke-linecap="round" stroke-width="4">
+      <path d="M60 70 C60 110 140 90 140 130 V210" stroke="url(#g)"/>
+      <path d="M140 150 C140 180 220 170 220 200 V250" stroke="url(#g)" opacity=".6"/>
+      <path d="M60 190 C60 155 140 165 140 130" stroke="var(--faint)"/>
+      <path d="M140 210 C140 240 60 230 60 260" stroke="url(#g)"/>
+    </g>
+    <g fill="var(--ground)" stroke-width="4">
+      <circle cx="60" cy="70" r="9" fill="var(--violet)" stroke="none"/>
+      <circle cx="60" cy="190" r="8" stroke="var(--faint)"/>
+      <circle cx="140" cy="130" r="8" stroke="var(--violet)"/><circle cx="140" cy="180" r="8" stroke="var(--cyan)"/>
+      <circle cx="220" cy="250" r="8" stroke="var(--cyan)"/>
+      <circle cx="60" cy="260" r="9" fill="var(--cyan)" stroke="none"/>
+    </g>
+  </svg>
+</header>
+
+
+<div class="graph">
+<section id="summary">
+  <h2 class="commit">Summary</h2>
+  <p class="lead">Every case below, merged into one view. <strong>“X% faster”</strong> means the other library needs X% more time than Branch for the same work: if Branch takes 1.0 ms and NetRay 1.5 ms, Branch is 50% faster.</p>
+  <div class="merge" id="merge"></div>
+  <p class="lead" style="margin-top:14px">Branch was faster in every case but one: the function round trip is a tie, because the network decides it, not the code. Branch also sends the same or fewer bytes everywhere, and it <strong>validates everything a client sends</strong>. NetRay does not by default.</p>
+</section>
+
+<section id="lune">
+  <h2 class="commit">Part 1 · Lune</h2>
+  <p class="lead">The generated code alone, outside Roblox: clean, repeatable numbers for comparing the code itself.</p>
+  <div class="how"><ul>
+    <li><b>Same generated code.</b> Each library's code came from its own compiler and the same schema: the Blink CLI, the NetRay CLI and Branch Studio.</li>
+    <li><b>Fake Roblox.</b> The code ran in Lune (a Luau runtime) inside a small fake Roblox: players, RemoteEvents and a frame clock. One fake server and N fake clients passed real buffers to each other.</li>
+    <li><b>Measured:</b> encode is every <code>Fire</code> call plus the end-of-frame flush; decode is receiving and dispatching; total is both.</li>
+    <li><b>Runs:</b> 30 warm-up and 300 measured frames, 5 repeats (best kept), and the whole benchmark 3 times (best cell kept).</li>
+    <li><b>Units:</b> milliseconds per frame, lower is better. Branch's numbers include server-side validation.</li>
+  </ul>
+  <div class="legend"><span><i style="background:var(--grad)"></i>Branch</span><span><i style="background:var(--netray)"></i>NetRay</span><span><i style="background:repeating-linear-gradient(90deg,var(--netray) 0 7px,transparent 7px 11px)"></i>NetRay (Validate=Full)</span><span><i style="background:var(--blink)"></i>Blink</span></div>
+  </div>
+  <div id="lune-cases"></div>
+</section>
+
+<section id="studio">
+  <h2 class="commit">Part 2 · Roblox Studio</h2>
+  <p class="lead">The real engine: a Play session in Studio with a real server and a real client.</p>
+  <div class="how"><ul>
+    <li><b>One place, three libraries.</b> A benchmark place with all three libraries side by side, each with the same schema.</li>
+    <li><b>NetRay's own method.</b> The harness follows the NetRay author's benchmark place: same car data, 50 sends per frame. We added the flush time, remote calls, server → client sends, and decode timed on a real captured packet.</li>
+    <li><b>Equal instrumentation.</b> All three libraries were measured the same way.</li>
+    <li><b>Units:</b> nanoseconds per message, lower is better.
+      <ul><li>Throughput: 300 frames × 3 runs, median shown.</li><li>Decode: 2000 iterations × 5, best shown.</li></ul>
+    </li>
+  </ul></div>
+  <article class="case">
+    <div class="ref commit">studio/correctness <span>· first</span></div>
+    <h3>Correctness first</h3>
+    <p class="desc">Before any timing, 50 cars went through each library and were checked field by field on the server. After every timing phase, each library had delivered all 60,000 server → client events.</p>
+    <div class="stats"><div class="stat"><b>50 / 50</b><span>cars intact: Branch, NetRay and Blink</span></div><div class="stat"><b>60,000</b><span>of 60,000 events delivered, each library</span></div></div>
+  </article>
+  <div id="studio-cases"></div>
+</section>
+
+
+
+<p class="foot">Full text: <a href="https://github.com/PraxPrix-Studios/Branch-Framework/blob/main/docs/markdowns/benchmarks.md">benchmarks.md</a> · Source: <a href="https://github.com/PraxPrix-Studios/Branch-Framework">PraxPrix-Studios/Branch-Framework</a></p>
+</div>
+</div>
+
+<script>
+const pct=(o,b)=>Math.round((o/b-1)*100);
+const CLS={"Branch":"branch","NetRay":"netray","NetRay (Validate=Full)":"netrayfull","Blink":"blink"};
+const lune=[
+ {r:"lune/cars",n:"NetRay's own benchmark (cars)",d:"The test the NetRay author uses to present NetRay: every frame, the client sends 50 “car” records to the server (brand, name, id, an “available” flag, dealer count, price).",
+  cols:["Encode","Decode","Total","Bytes / frame"],rows:[["Branch",.027,.029,.056,6273],["NetRay",.056,.030,.086,6273],["NetRay (Validate=Full)",.086,.034,.120,6273],["Blink",.044,.055,.099,6420]],
+  note:["Decoding is about even with NetRay; the difference is in sending.","With validation on, NetRay is 114% slower than Branch. With <code>Unpack</code>, Branch drops to 0.051 ms."]},
+ {r:"lune/bools",n:"Booleans (1000 × 10 per frame)",d:"The client sends 1000 true/false values to the server 10 times per frame, typical of a grid, map or inventory stored as flags.",
+  cols:["Encode","Decode","Total","Bytes / frame"],rows:[["Branch",.391,.694,1.085,1273],["NetRay",1.366,1.398,2.764,1273],["NetRay (Validate=Full)",4.327,1.391,5.718,1273],["Blink",.677,1.089,1.766,10030]],
+  note:["Branch and NetRay pack 8 booleans into a byte; Blink spends a byte on each, so its packets are about 8× larger.","A second Branch build with identical code for this case measured 0.595 ms. We kept the slower number."]},
+ {r:"lune/entities",n:"Entities (100 small structs × 10 per frame)",d:"The client sends 100 compact records 10 times per frame. Each record has six small numbers: id, x, y, z, orientation and animation.",
+  cols:["Encode","Decode","Total","Bytes / frame"],rows:[["Branch",.197,.240,.437,6013],["NetRay",.391,.653,1.044,6023],["NetRay (Validate=Full)",1.169,.660,1.829,6023],["Blink",.352,.814,1.166,6030]],
+  note:["Fixed-size fields sit at known positions with one space check per record. That pays off most here."]},
+ {r:"lune/chat",n:"Chat (string + number × 500 per frame)",d:"The client sends 500 short messages per frame, each a text plus a number: strings and many small events.",
+  cols:["Encode","Decode","Total","Bytes / frame"],rows:[["Branch",.124,.095,.219,6504],["NetRay",.294,.132,.426,6504],["NetRay (Validate=Full)",.379,.167,.546,6504],["Blink",.184,.171,.355,7500]],
+  note:["Each Blink message is 2 bytes larger, because Blink stores every string length in 2 bytes."]},
+ {r:"lune/move",n:"Movement, server → one player (500 per frame)",d:"500 movement updates per frame to one player: position, velocity, direction, three flags and an animation id.",
+  cols:["Encode","Decode","Total","Bytes / frame","Remote calls"],rows:[["Branch",.607,.508,1.115,15004,1],["NetRay",.912,.634,1.546,16500,500],["NetRay (Validate=Full)",1.184,.692,1.876,16500,500],["Blink",1.019,1.066,2.085,16500,1]],
+  note:["NetRay makes one remote call per event: 500 per frame. Branch and Blink batch a frame into one call.","Branch is 9% smaller: a repeated event's id is written once per run."]},
+ {r:"lune/fireall",n:"Movement, FireAll to 20 players (50 per frame)",d:"50 movement updates per frame broadcast to 20 players. Decode is the time for all 20 players together.",
+  cols:["Encode","Decode","Total","Bytes / frame","Remote calls"],rows:[["Branch",.123,1.701,1.824,30060,1],["NetRay",.160,1.781,1.941,32060,1],["NetRay (Validate=Full)",.218,1.983,2.201,32060,1],["Blink",.608,1.879,2.487,33000,20]],
+  note:["The closest case. Branch and NetRay send a broadcast once; Blink sends a copy per player. Branch still sends 6% fewer bytes than NetRay."]},
+ {r:"lune/unreliable",n:"Unreliable movement (200 per frame)",d:"200 updates per frame over the unreliable channel. Roblox drops unreliable packets above ~900 bytes, so every packet must stay under that.",
+  cols:["Encode","Decode","Total","Bytes / frame","Packets","Largest"],rows:[["Branch",.501,.344,.845,6024,8,"813 B"],["NetRay",.791,.474,1.265,6600,200,"33 B"],["NetRay (Validate=Full)",.979,.505,1.484,6600,200,"33 B"],["Blink",.692,.737,1.429,6600,200,"33 B"]],
+  note:["NetRay and Blink send every unreliable event as its own packet. Branch packs 200 events into 8 packets, each safely under the limit."]}
+];
+const studio=[
+ {r:"studio/up",n:"Client → server, 50 cars per frame",d:"NetRay's own test in the real engine: the <code>Fire</code> call plus the end-of-frame flush, per car.",
+  cols:["Fire call","Fire + flush","Bytes per car"],ti:2,rows:[["Branch",310,684,125.5],["NetRay",322,824,125.5],["Blink",552,929,128.4]],
+  note:["The <code>Fire</code> call alone is close: Branch is 4% faster. The gap comes from building and sending the packet."]},
+ {r:"studio/decode-up",n:"The server reads those 50 cars",d:"The time to decode <strong>and validate</strong> one real captured packet, per car.",
+  cols:["Time per car"],ti:1,rows:[["Branch",108],["NetRay",131],["Blink",375]],note:["Validation is Branch's defence against exploiters, and it is included in this time."]},
+ {r:"studio/send",n:"Server → one player, 100 events per frame",d:"Per event, over 300 frames of 100 movement updates.",
+  cols:["Fire call","Flush","Total","Bytes / event","Remote calls / frame"],ti:3,rows:[["Branch",123,190,313,30,1],["NetRay",1638,13,1651,33,100],["Blink",257,186,444,33,1]],
+  note:["NetRay makes one engine remote call per event, and in the real engine each is expensive. Branch makes one per frame."]},
+ {r:"studio/broadcast",n:"FireAll, 100 events per frame",d:"Per event, broadcast to every player.",
+  cols:["FireAll call","Flush","Total","Bytes / event"],ti:3,rows:[["Branch",152,176,328,30],["NetRay",119,287,406,32],["Blink",561,176,737,33]],
+  note:["To be fair: NetRay's <code>FireAll</code> call alone is cheaper (119 vs 152 ns). Branch spends a little more up front to keep per-player order exact, and wins it back in the flush."]},
+ {r:"studio/decode-down",n:"The client reads a FireAll frame",d:"The time to decode one real packet of 50 movement updates, per event.",
+  cols:["Time per event"],ti:1,rows:[["Branch",38],["NetRay",45],["Blink",295]],note:[]},
+ {r:"studio/rtt",n:"Round trip of a function call",d:"The client calls a server function 60 times and waits for each answer. Milliseconds.",
+  cols:["Average","Median","95th percentile","Wrong answers"],ti:2,tie:true,unit:"ms",rows:[["Branch",20.60,20.62,21.80,0],["NetRay",20.66,20.75,21.67,0],["Blink",20.40,20.50,21.88,0]],
+  note:["Decided by the network and the engine tick, not the library. All three are within 0.3 ms, less than the noise between runs."]}
+];
+const fmt=v=>typeof v==="number"?(Number.isInteger(v)?v.toLocaleString("en-US"):String(v)):v;
+function fork(c,ti,unit){
+  const max=Math.max(...c.rows.map(r=>r[ti]));
+  return `<div class="fork" role="img" aria-label="${c.cols[ti-1]} per library, a shorter line is faster"><p class="axis">${c.cols[ti-1].toUpperCase()} · SHORTER LINE = FASTER</p>`+
+   c.rows.map(r=>{const w=(r[ti]/max*100).toFixed(1);const b=r[0]==="Branch";
+    return `<div class="row c-${CLS[r[0]]}${b?" b":""}"><span class="lib">${r[0].replace(" (Validate=Full)"," (Full)")}</span><div class="lane"><i class="stem" style="width:${w}%"></i><span class="val" style="left:calc(${w}% + 14px)">${r[ti]} ${unit}</span></div></div>`}).join("")+`</div>`;
+}
+function caseHTML(c,ti,unit){
+  const g=l=>c.rows.find(r=>r[0]===l)[ti];const B=g("Branch");
+  const v=c.tie?`<span class="chip tie">Tie · all three within 0.3 ms</span>`:`<span class="chip"><b>${pct(g("NetRay"),B)}%</b> faster than NetRay</span><span class="chip"><b>${pct(g("Blink"),B)}%</b> faster than Blink</span>`;
+  const t=`<div class="tbl"><table><thead><tr><th>Library</th>${c.cols.map(h=>`<th>${h}</th>`).join("")}</tr></thead><tbody>${c.rows.map(r=>`<tr class="${r[0]==="Branch"?"b":""}"><td>${r[0]}</td>${r.slice(1).map(x=>`<td>${fmt(x)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+  const n=c.note.length?`<ul class="notes">${c.note.map(x=>`<li>${x}</li>`).join("")}</ul>`:"";
+  return `<article class="case"><div class="ref commit">${c.r}</div><h3>${c.n}</h3><p class="desc">${c.d}</p><div class="verdict">${v}</div>${fork(c,ti,unit)}${t}${n}</article>`;
+}
+document.getElementById("lune-cases").innerHTML=lune.map(c=>caseHTML(c,3,"ms")).join("");
+document.getElementById("studio-cases").innerHTML=studio.map(c=>caseHTML(c,c.ti,c.unit||"ns")).join("");
+const all=[...lune.map(c=>[c,3]),...studio.map(c=>[c,c.ti])];
+document.getElementById("merge").innerHTML=`<div class="mrow mhead"><span>case</span><span class="p">vs NetRay</span><span class="p">vs Blink</span></div>`+all.map(([c,ti])=>{
+  const g=l=>c.rows.find(r=>r[0]===l)[ti];
+  const cell=o=>c.tie?`<span class="p tie">tie</span>`:`<span class="p">${pct(g(o),g("Branch"))}%</span>`;
+  return `<div class="mrow"><span class="n"><code>${c.r}</code><span>${c.n}</span></span>${cell("NetRay")}${cell("Blink")}</div>`}).join("");
+</script>
+
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

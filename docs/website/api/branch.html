@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Branch API · Branch</title>
+<meta name="description" content="API reference for the Branch module: Start, GetSegment, LocateSegments, GetPhase, AwaitStart, GetReport, Network, Data.">
+<link rel="icon" href="../assets/mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-root="../" data-page="api/branch">
+<div class="layout">
+<aside class="side" id="sidebar" aria-label="Documentation"></aside>
+<main class="doc">
+<div class="eyebrow">api/branch</div>
+<h1>Branch</h1>
+<p class="lead">The module you require on both sides. It loads your segments and gives access to <code>Branch.Data</code> and <code>Branch.Network</code>.</p>
+<pre><code>local Branch = require(game.ReplicatedStorage.Packages.Branch)</code></pre>
+<p>Reading a key that does not exist on <code>Branch</code> is an error, so a typo such as <code>Branch.Netwrok</code> fails loudly. The utilities are ModuleScripts inside the package, not fields: see <a href="util.html">Utilities</a>.</p>
+
+<div class="api" id="version">
+<h3>Branch.Version <span class="tag">field</span></h3>
+<div class="sig">Branch.<b>Version</b>: string</div>
+<p>The runtime version, for example <code>"2.0.0"</code>.</p>
+</div>
+
+<div class="api" id="start">
+<h3>Branch:Start <span class="tag">method</span></h3>
+<div class="sig">Branch:<b>Start</b>(...roots: Instance, options: { SegmentRule: "Suffix" | "Folders" }?)</div>
+<p>Finds the segments under every root, requires them, runs <code>Init</code> in dependency order, spawns every <code>Start</code>, then connects hooks. See <a href="../guide/segments.html">Segments</a>.</p>
+<ul class="params">
+  <li><code>roots</code> — one or more Instances to search.</li>
+  <li><code>options.SegmentRule</code> — optional, last argument. Overrides the <code>SegmentRule</code> attribute that Branch Studio sets on the module. Without either, <code>"Suffix"</code>.</li>
+</ul>
+<p><b>Errors</b> if called twice, if an argument is not an Instance (except a final options table), or if <code>SegmentRule</code> is not <code>"Suffix"</code> or <code>"Folders"</code>. Arguments are checked before anything starts, so a bad call leaves Branch startable.</p>
+<pre><code>Branch:Start(script.Parent.Services)
+Branch:Start(script.Parent.Services, script.Parent.Systems, { SegmentRule = "Folders" })</code></pre>
+</div>
+
+<div class="api" id="getsegment">
+<h3>Branch:GetSegment <span class="tag">method</span></h3>
+<div class="sig">Branch:<b>GetSegment</b>(name: string): Segment</div>
+<p>Returns the table of the segment with that name. With Branch Studio the return value is typed per segment, so methods autocomplete.</p>
+<p><b>Errors</b> if there is no such segment. The error says so and names the current phase. Look segments up in <code>Init</code> or later, not at the top of a module.</p>
+</div>
+
+<div class="api" id="locatesegments">
+<h3>Branch:LocateSegments <span class="tag">method</span></h3>
+<div class="sig">Branch:<b>LocateSegments</b>(names: { string }): { [string]: Segment }</div>
+<p>Looks up several segments at once and returns them keyed by name. Errors like <code>GetSegment</code> if any is missing.</p>
+<pre><code>local s = Branch:LocateSegments({ "PlayerService", "ShopService" })
+s.ShopService:Open(player)</code></pre>
+</div>
+
+<div class="api" id="getphase">
+<h3>Branch:GetPhase <span class="tag">method</span></h3>
+<div class="sig">Branch:<b>GetPhase</b>(): "Idle" | "Loading" | "Initializing" | "Started"</div>
+<p>Where the start sequence is. <code>"Idle"</code> before <code>Start</code>; <code>"Started"</code> once every <code>Start</code> has been spawned and hooks are connected.</p>
+</div>
+
+<div class="api" id="awaitstart">
+<h3>Branch:AwaitStart <span class="tag">method · yields</span></h3>
+<div class="sig">Branch:<b>AwaitStart</b>()</div>
+<p>Yields until the phase is <code>"Started"</code>. Returns at once if it already is. Useful in scripts that are not segments.</p>
+</div>
+
+<div class="api" id="getreport">
+<h3>Branch:GetReport <span class="tag">method</span></h3>
+<div class="sig">Branch:<b>GetReport</b>(): { SegmentReport }
+
+type SegmentReport = {
+	Name: string,
+	Path: string,     -- full name of the ModuleScript
+	Status: "Loaded" | "Initialized" | "Failed" | "Started",
+	InitMs: number,   -- how long Init took
+}</div>
+<p>One entry per loaded segment, in load order.</p>
+<pre><code>for _, segment in Branch:GetReport() do
+	print(segment.Name, segment.Status, string.format("%.1f ms", segment.InitMs))
+end</code></pre>
+</div>
+
+<div class="api" id="network">
+<h3>Branch.Network <span class="tag">field · lazy</span></h3>
+<div class="sig">Branch.<b>Network</b>: { Server: …, Client: …, OnReject: … }</div>
+<p>The compiled networking, loaded on first use. Errors if Branch Studio has not compiled it: turn on <b>Compiled networking</b>. See <a href="network.html">Branch.Network</a>.</p>
+</div>
+
+<div class="api" id="data">
+<h3>Branch.Data <span class="tag">field · lazy</span></h3>
+<div class="sig">Branch.<b>Data</b>: { Server: …, Client: … }</div>
+<p>Player data, loaded on first use. Only the side you are on is loaded, so ProfileStore never reaches a client's memory. Using the other side's table is an error. See <a href="data-server.html">Branch.Data.Server</a> and <a href="data-client.html">Branch.Data.Client</a>.</p>
+</div>
+
+<h2>Segment fields</h2>
+<p>Branch reads these fields from each segment table. All are optional.</p>
+<div class="tbl"><table>
+<thead><tr><th>Field</th><th>Type</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>Dependencies</code></td><td><code>{ string }</code></td><td>Segments whose <code>Init</code> must run first.</td></tr>
+<tr><td><code>Init</code></td><td><code>(self) -> ()</code></td><td>Runs one segment at a time, in dependency order. May yield.</td></tr>
+<tr><td><code>Start</code></td><td><code>(self) -> ()</code></td><td>Spawned after every <code>Init</code>.</td></tr>
+<tr><td><code>PlayerAdded</code></td><td><code>(self, Player) -> ()</code></td><td>Current and future players, each in its own thread.</td></tr>
+<tr><td><code>PlayerRemoving</code></td><td><code>(self, Player) -> ()</code></td><td>When a player leaves.</td></tr>
+<tr><td><code>Heartbeat</code></td><td><code>(self, dt: number) -> ()</code></td><td>Every frame, after physics.</td></tr>
+<tr><td><code>PreSimulation</code></td><td><code>(self, dt: number) -> ()</code></td><td>Every frame, before physics.</td></tr>
+<tr><td><code>PreRender</code></td><td><code>(self, dt: number) -> ()</code></td><td>Every frame, before rendering. Client only.</td></tr>
+<tr><td><code>Network</code></td><td>table</td><td>Networking declarations, read by Branch Studio. See <a href="../guide/network.html">Networking</a>.</td></tr>
+</tbody></table></div>
+</main>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

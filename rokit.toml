@@ -1,0 +1,6 @@
+# Tools for working on Branch. Install Rokit (https://github.com/rojo-rbx/rokit),
+# then run `rokit install` in this folder.
+[tools]
+lune = "lune-org/lune@0.10.5" # tests: lune run tests/runtime.test.luau
+pesde = "pesde-pkg/pesde@0.7.4+registry.0.2.3" # packaging: pesde publish
+rojo = "rojo-rbx/rojo@7.7.0" # building: rojo build -o Branch.rbxm

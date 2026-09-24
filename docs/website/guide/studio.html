@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Branch Studio · Branch</title>
+<meta name="description" content="The Branch Studio plugin: installs the runtime, compiles types and networking as you type, browses DataStores, and keeps renames in sync.">
+<link rel="icon" href="../assets/mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-root="../" data-page="guide/studio">
+<div class="layout">
+<aside class="side" id="sidebar" aria-label="Documentation"></aside>
+<main class="doc">
+<div class="eyebrow">guide/studio</div>
+<h1>Branch Studio</h1>
+<p class="lead">The free Studio plugin that does the busywork: it installs and updates the runtime, compiles typed autocomplete and networking while you type, and lets you browse and edit DataStores.</p>
+
+<h2>Toolbar</h2>
+<div class="tbl"><table>
+<thead><tr><th>Button</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><b>Branch</b></td><td>Opens the Branch Studio window.</td></tr>
+<tr><td><b>Compile</b></td><td>Compiles types and networking now.</td></tr>
+<tr><td><b>Live</b></td><td>Turns compiling while you edit on or off.</td></tr>
+</tbody></table></div>
+
+<h2>Pages</h2>
+<div class="tbl"><table>
+<thead><tr><th>Page</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><b>Overview</b></td><td>Install or update the runtime. Live stats. One switch per feature. Problems: click one to open the script at that line. Casing tools.</td></tr>
+<tr><td><b>Network</b></td><td>Every event with its direction, reliability, sync mode, wire signature and bytes per fire. A filter box. Click an event to open its declaration.</td></tr>
+<tr><td><b>DataStores</b></td><td>Browse stores and keys. Values appear as a virtualised tree, so 50,000 keys scroll as fast as 20. Edit inline or as JSON. Version history with preview and restore. A size meter shows how close a key is to the 4 MB limit. ProfileStore profiles are recognised, including which server holds the session lock. <b>Try sample</b> lets you explore offline.</td></tr>
+<tr><td><b>Settings</b></td><td>Every setting below.</td></tr>
+<tr><td><b>Log</b></td><td>Everything the plugin did. Click an entry to open its script.</td></tr>
+</tbody></table></div>
+
+<h2>What it does for you</h2>
+<ul>
+  <li><strong>Compiles as you type.</strong> After you pause, the plugin rebuilds typed autocomplete (<code>GetSegment</code>, data paths) and <code>Branch.Network</code>. All outputs land in one undo step, and nothing is written when nothing changed.</li>
+  <li><strong>Feature switches clean up after themselves.</strong> Turning Network off deletes <code>Branch.Network</code> and resets its type. Turning it back on regenerates everything. The same goes for Types and Data types.</li>
+  <li><strong>Templates for new modules.</strong> A new segment module is filled from the Service or Controller template, with <code>{NAME}</code> replaced by the module's name. The plugin waits for Studio's own <code>local module = {} return module</code> to land first, so the template is never overwritten. A module renamed to <code>…Service</code> or <code>…Controller</code> while still empty is filled too.</li>
+  <li><strong>Smart rename.</strong> Renaming a module carries the new name into your code, in one undo step:
+    <ul>
+      <li>the module's own table name, in code only (strings, comments and fields such as <code>data.Shop</code> keep their text);</li>
+      <li>lookups by name in every script: <code>GetSegment("Shop")</code>, <code>LocateSegments</code>, <code>Dependencies</code>;</li>
+      <li>paths that reach the module, relative or absolute: <code>script.Util</code>, <code>script.Parent.Shop.Util</code>, <code>:WaitForChild("Shop")</code>, <code>game.ReplicatedStorage.Shared.Util</code>, <code>workspace.Map</code>. Only paths that really lead to that module change.</li>
+    </ul>
+    Casing tools (PascalCase, camelCase, snake_case, SNAKE_CASE or your own prefix) rename everything the same way and never give two segments the same name.
+  </li>
+  <li><strong>Safe install and update.</strong> The plugin remembers which runtime files it installed, with a fingerprint of each. On update, files that are no longer shipped are removed, and files you edited by hand are copied to <code>ServerStorage.BranchBackups</code> before they are replaced. Your generated files and settings are kept. A Branch 1 runtime is never touched until you press <b>Update</b>.</li>
+  <li><strong>Checks engine names.</strong> A mistyped <code>Enum(...)</code> is an error (the last working network stays), and an unknown <code>Instance(...)</code> class is a warning.</li>
+  <li><strong>Light on slow machines.</strong>
+    <ul>
+      <li>Modules are re-read only when their text changed, and networking is regenerated only when a declaration or a network setting changed.</li>
+      <li>The wait before a compile grows on slower machines, and only ModuleScripts wake the plugin.</li>
+      <li><b>Reduce motion</b> turns off every animation.</li>
+    </ul>
+  </li>
+  <li><strong>Stays out of the way.</strong> It does nothing in Play mode, and every connection is cleaned up when it unloads.</li>
+</ul>
+
+<h2>Settings</h2>
+<p><b>Project</b> settings are saved in the place, as attributes on <code>ServerStorage</code>: shared with Team Create and invisible to players. <b>Editor</b> settings are yours alone.</p>
+<div class="tbl"><table>
+<thead><tr><th>Group</th><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td>Features</td><td>Type compiler</td><td>on</td><td>Autocomplete for <code>GetSegment</code> and friendly type names.</td></tr>
+<tr><td>Features</td><td>Compiled networking</td><td>off</td><td><code>Service.Network</code> tables become <code>Branch.Network</code>.</td></tr>
+<tr><td>Features</td><td>Data types</td><td>on</td><td>Typed data paths from your data template.</td></tr>
+<tr><td>Features</td><td>Compile on change</td><td>on</td><td>Recompile as you type.</td></tr>
+<tr><td>Features</td><td>Template new modules</td><td>on</td><td>Fill new segment modules from the templates.</td></tr>
+<tr><td>Features</td><td>Rename follows code</td><td>on</td><td>Renaming a module updates your code.</td></tr>
+<tr><td>Paths</td><td>Branch</td><td><code>ReplicatedStorage.Packages.Branch</code></td><td>Where the runtime lives.</td></tr>
+<tr><td>Paths</td><td>Server segments</td><td><code>ServerScriptService.Services</code></td><td>Server root the plugin compiles.</td></tr>
+<tr><td>Paths</td><td>Client segments</td><td><code>StarterPlayer.StarterPlayerScripts.Controllers</code></td><td>Client root the plugin compiles.</td></tr>
+<tr><td>Paths</td><td>Segment rule</td><td><code>Suffix</code></td><td><code>Suffix</code> or <code>Folders</code>; see <a href="segments.html">Segments</a>.</td></tr>
+<tr><td>Paths</td><td>Data template</td><td>empty</td><td>The ModuleScript that returns your player data template.</td></tr>
+<tr><td>Network</td><td>Argument checks</td><td><code>Studio</code></td><td>Check <code>Fire</code> arguments: in Studio only, always, or never.</td></tr>
+<tr><td>Network</td><td>Unreliable budget</td><td>820</td><td>Bytes per batched unreliable packet (Roblox drops above ~900).</td></tr>
+<tr><td>Network</td><td>Max client packet</td><td>65536</td><td>The server refuses bigger packets.</td></tr>
+<tr><td>Network</td><td>Max client array</td><td>16384</td><td>The longest array or map a client may send.</td></tr>
+<tr><td>Network</td><td>Early event queue</td><td>256</td><td>Events kept until the first listener connects.</td></tr>
+<tr><td>Network</td><td>Reject NaN / inf</td><td>on</td><td>Drop client numbers that are not finite.</td></tr>
+<tr><td>Templates</td><td>New service / New controller</td><td>built in</td><td>The text of new modules; <code>{NAME}</code> becomes the module's name.</td></tr>
+<tr><td>Casing</td><td>Custom prefix</td><td><code>omo</code></td><td>Prefix for the custom casing button.</td></tr>
+<tr><td>Editor</td><td>Reduce motion</td><td>off</td><td>No animations in the plugin window.</td></tr>
+<tr><td>Editor</td><td>Compile delay (s)</td><td>0.4</td><td>Quiet time after typing before compiling.</td></tr>
+</tbody></table></div>
+
+<h2>Automation</h2>
+<p>Code with plugin permissions can drive the plugin by setting the widget attribute <code>BranchCommand</code> to <code>tab:&lt;page&gt;</code>, <code>compile</code>, <code>install</code>, <code>sample</code> or <code>expandAll</code>.</p>
+</main>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

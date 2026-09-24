@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Branch.Data.Client · Branch</title>
+<meta name="description" content="API reference for Branch.Data.Client: the local player's read-only data mirror.">
+<link rel="icon" href="../assets/mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-root="../" data-page="api/data-client">
+<div class="layout">
+<aside class="side" id="sidebar" aria-label="Documentation"></aside>
+<main class="doc">
+<div class="eyebrow">api/data-client</div>
+<h1>Branch.<wbr>Data.<wbr>Client</h1>
+<p class="lead">A read-only mirror of the local player's data. It starts syncing as soon as it is required; there is nothing to start. Only the server writes.</p>
+<pre><code>local Data = Branch.Data.Client</code></pre>
+<p>If the server has not called <code>Branch.Data.Server.Start</code>, the client warns after 15 seconds.</p>
+
+<div class="api" id="get">
+<h3>Data.Get</h3>
+<div class="sig">Data.<b>Get</b>(path: string?): any</div>
+<p>The value at <code>path</code>, or the whole data table without a path. <code>nil</code> until the data arrives.</p>
+</div>
+
+<div class="api" id="isloaded">
+<h3>Data.IsLoaded</h3>
+<div class="sig">Data.<b>IsLoaded</b>(): boolean</div>
+<p>Whether the data has arrived.</p>
+</div>
+
+<div class="api" id="await">
+<h3>Data.Await <span class="tag">yields</span></h3>
+<div class="sig">Data.<b>Await</b>(): PlayerData</div>
+<p>Yields until the data arrives and returns it.</p>
+</div>
+
+<div class="api" id="onloaded">
+<h3>Data.OnLoaded</h3>
+<div class="sig">Data.<b>OnLoaded</b>(callback: (data: PlayerData) -> ())</div>
+<p>Calls <code>callback</code> once with the data: straight away if it has arrived, otherwise when it does.</p>
+</div>
+
+<div class="api" id="observe">
+<h3>Data.Observe</h3>
+<div class="sig">Data.<b>Observe</b>(path: string, callback: (new: any, old: any) -> ()): () -> ()</div>
+<p>Calls <code>callback(value, nil)</code> once the data has arrived, then <code>callback(new, old)</code> after every change. Returns a function that stops observing.</p>
+<pre><code>local stop = Data.Observe("coins", function(coins)
+	CoinLabel.Text = tostring(coins)
+end)</code></pre>
+</div>
+
+<div class="api" id="oninserted">
+<h3>Data.OnInserted</h3>
+<div class="sig">Data.<b>OnInserted</b>(path: string, callback: (index: number, value: any) -> ()): () -> ()</div>
+<p>Calls <code>callback</code> whenever the server inserts into the array at <code>path</code>. Returns a function that disconnects it.</p>
+</div>
+
+<div class="api" id="onremoved">
+<h3>Data.OnRemoved</h3>
+<div class="sig">Data.<b>OnRemoved</b>(path: string, callback: (index: number, value: any) -> ()): () -> ()</div>
+<p>Calls <code>callback</code> whenever the server removes from the array at <code>path</code>. Returns a function that disconnects it.</p>
+</div>
+</main>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

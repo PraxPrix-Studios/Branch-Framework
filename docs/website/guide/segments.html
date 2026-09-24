@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Segments · Branch</title>
+<meta name="description" content="How Branch finds services and controllers, the Init/Start lifecycle, dependencies, player and frame hooks, and what happens when something fails.">
+<link rel="icon" href="../assets/mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-root="../" data-page="guide/segments">
+<div class="layout">
+<aside class="side" id="sidebar" aria-label="Documentation"></aside>
+<main class="doc">
+<div class="eyebrow">guide/segments</div>
+<h1>Segments</h1>
+<p class="lead">A segment is a ModuleScript that returns a table. On the server they are your services, on the client your controllers. Branch finds them, starts them in the right order and wires up their hooks.</p>
+
+<h2>Which modules are segments</h2>
+<p>Branch looks under the roots you pass to <code>Branch:Start</code> and decides which modules are segments with a <em>segment rule</em>:</p>
+<div class="tbl"><table>
+<thead><tr><th>Rule</th><th>Segments</th><th>Everything else</th></tr></thead>
+<tbody>
+<tr><td><code>"Suffix"</code> (default)</td><td>Every ModuleScript under the roots whose name ends with <b>Service</b> (server) or <b>Controller</b> (client), at any depth and in any casing: <code>ShopService</code>, <code>shopService</code>, <code>shop_service</code>, <code>SHOP_SERVICE</code>. Services can nest inside services.</td><td>Helpers. They are never loaded on their own; require them yourself.</td></tr>
+<tr><td><code>"Folders"</code></td><td>Modules directly under a root, or under Folders inside it.</td><td>A module parented to another module is that module's private helper.</td></tr>
+</tbody></table></div>
+<pre><code>Branch:Start(script.Parent.Services)                               -- rule from Branch Studio, else "Suffix"
+Branch:Start(script.Parent.Services, { SegmentRule = "Folders" })  -- explicit</code></pre>
+<p>You choose the rule in Branch Studio (<b>Settings → Paths → Segment rule</b>). The plugin stores it as the <code>SegmentRule</code> attribute on the Branch module, so the plugin and the runtime always agree. An options table passed to <code>Start</code> wins over the attribute.</p>
+<div class="note"><b>Forgot the suffix?</b> Under <code>"Suffix"</code>, a module with <code>Init</code> or <code>Start</code> whose name does not end in Service/Controller (say <code>ShopManager</code>) is not loaded. Branch Studio lists it as a warning.</div>
+
+<h2>The lifecycle</h2>
+<ol>
+  <li><strong>Load.</strong> Every segment is <code>require</code>d. A module that errors or does not return a table is reported and skipped.</li>
+  <li><strong>Init.</strong> Each segment's <code>Init</code> runs <em>one at a time</em>, in dependency order. <code>Init</code> may yield, and everything after it waits.</li>
+  <li><strong>Start.</strong> After every <code>Init</code> has finished, each segment's <code>Start</code> runs in its own thread, so a <code>Start</code> that loops forever does not block the others.</li>
+  <li><strong>Hooks.</strong> Player and frame hooks are connected.</li>
+</ol>
+<pre><code>local ShopService = { Dependencies = { "PlayerService" } } -- Init runs after PlayerService:Init
+
+function ShopService:Init() end                 -- sequential, dependency-ordered, may yield
+function ShopService:Start() end                -- each in its own thread, after every Init
+function ShopService:PlayerAdded(player) end    -- players already in game + every future join
+function ShopService:PlayerRemoving(player) end -- can still read/write the player's data
+function ShopService:Heartbeat(dt) end          -- also PreSimulation, PreRender (client)
+
+return ShopService</code></pre>
+<p><code>Branch:AwaitStart()</code> yields until all of this is done. <code>Branch:GetPhase()</code> tells you where Branch is: <code>"Idle"</code>, <code>"Loading"</code>, <code>"Initializing"</code> or <code>"Started"</code>.</p>
+
+<h2>Dependencies</h2>
+<p>List the names of segments whose <code>Init</code> must run before yours:</p>
+<pre><code>local ShopService = { Dependencies = { "PlayerService", "InventoryService" } }</code></pre>
+<ul>
+  <li>Segments without dependencies keep their discovery order.</li>
+  <li>A name that is not a segment, or a cycle (A needs B, B needs A), is reported in red. Branch still starts everything else.</li>
+  <li><code>Dependencies</code> only orders <code>Init</code>. Every <code>Start</code> runs after every <code>Init</code> anyway.</li>
+</ul>
+
+<h2>Hooks</h2>
+<div class="tbl"><table>
+<thead><tr><th>Hook</th><th>When</th></tr></thead>
+<tbody>
+<tr><td><code>PlayerAdded(player)</code></td><td>For every player already in the game when Branch starts, then for every new player. Each call runs in its own thread.</td></tr>
+<tr><td><code>PlayerRemoving(player)</code></td><td>When a player leaves. On the server, <code>Branch.Data</code> still has their data: writes made before the hook yields are saved with the session.</td></tr>
+<tr><td><code>Heartbeat(dt)</code></td><td>Every frame, after physics.</td></tr>
+<tr><td><code>PreSimulation(dt)</code></td><td>Every frame, before physics.</td></tr>
+<tr><td><code>PreRender(dt)</code></td><td>Every frame, before rendering. Client only.</td></tr>
+</tbody></table></div>
+<p>Frame hooks share <strong>one engine connection per hook type</strong>, however many segments use them. A hook that errors is reported (at most once every 5 seconds per segment) and does not stop the other segments' hooks.</p>
+
+<h2>Finding other segments</h2>
+<pre><code>function ShopService:Init()
+	self.Players = Branch:GetSegment("PlayerService")
+	local found = Branch:LocateSegments({ "InventoryService", "CoinService" })
+end</code></pre>
+<ul>
+  <li><strong>Where to look segments up.</strong> Do it in <code>Init</code> or later, not at the top of the module: while modules are still loading, the one you want may not be loaded yet. An unknown name is an error, not <code>nil</code>.</li>
+  <li><strong>Autocomplete.</strong> With Branch Studio, <code>GetSegment</code> is typed per segment, so <code>Branch:GetSegment("ShopService"):Buy(…)</code> autocompletes.</li>
+</ul>
+
+<h2>When something goes wrong</h2>
+<ul>
+  <li><strong>A failing <code>Init</code></strong> marks the segment <code>Failed</code>. It is not started and its hooks are not connected. Segments that depend on it still start, with a warning that names the failed dependency.</li>
+  <li><strong>A slow <code>require</code> or <code>Init</code></strong> that is still running after 5 seconds gets a warning, since everything after it is waiting. The usual cause is a <code>WaitForChild</code> or DataStore call that never returns.</li>
+  <li><strong>Two segments with the same name</strong> are an error: the second is skipped and the message names both paths.</li>
+  <li><strong>A typo on <code>Branch</code></strong> such as <code>Branch.Netwrok</code> is an error instead of a silent <code>nil</code>.</li>
+  <li><strong>A bad argument to <code>Branch:Start</code></strong> errors before anything starts, so you can fix it and call <code>Start</code> again.</li>
+</ul>
+</main>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

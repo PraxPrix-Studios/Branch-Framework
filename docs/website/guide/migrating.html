@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Moving from Branch 1 · Branch</title>
+<meta name="description" content="What changed between Branch 1 and Branch 2, and how to move a game over.">
+<link rel="icon" href="../assets/mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-root="../" data-page="guide/migrating">
+<div class="layout">
+<aside class="side" id="sidebar" aria-label="Documentation"></aside>
+<main class="doc">
+<div class="eyebrow">guide/migrating</div>
+<h1>Moving from Branch 1</h1>
+<p class="lead">Branch 2 is a rewrite. Most games move over in an afternoon: the loader call changes, utilities move, and DataService becomes <code>Branch.Data</code>.</p>
+
+<h2>What changed</h2>
+<div class="tbl"><table>
+<thead><tr><th>Branch 1</th><th>Branch 2</th></tr></thead>
+<tbody>
+<tr><td><code>Branch:StartSegments(folder)</code> / <code>StartSegmentsDeep(folder)</code></td><td><code>Branch:Start(folder, ...)</code></td></tr>
+<tr><td>Every nested ModuleScript was a segment</td><td>Modules named <code>…Service</code> / <code>…Controller</code> are segments. With <code>"Folders"</code>, only modules reached through Folders are.</td></tr>
+<tr><td><code>Packages.Branch.Scythe</code> / <code>ThreadReaper</code> / <code>Timer</code></td><td><code>Packages.Branch.Util.Scythe</code> / <code>ThreadReaper</code> / <code>Timer</code></td></tr>
+<tr><td>A separate <code>Packages.DataService</code></td><td><code>Branch.Data.Server</code> / <code>Branch.Data.Client</code></td></tr>
+<tr><td><code>-- BRANCH_EXPORTS</code> block</td><td><code>-- BRANCH_GENERATED</code> block, managed by Branch Studio</td></tr>
+</tbody></table></div>
+
+<h2>Steps</h2>
+<ol>
+  <li><strong>Update the runtime.</strong> Open Branch Studio and press <b>Update</b> on the Overview page. The plugin never touches a Branch 1 runtime before you do.</li>
+  <li><strong>Change the start calls</strong> to <code>Branch:Start(...)</code> on the server and the client.</li>
+  <li><strong>Check your segment names.</strong> With the default <code>"Suffix"</code> rule, services must end in <code>Service</code> and controllers in <code>Controller</code>. Branch Studio warns about modules that have <code>Init</code> or <code>Start</code> but no suffix. If you would rather keep your folder layout, pick the <code>"Folders"</code> rule.</li>
+  <li><strong>Fix utility requires</strong>: <code>require(Packages.Branch.Util.Timer)</code> and so on.</li>
+  <li><strong>Move player data to <code>Branch.Data.Server.Start</code>.</strong> Use the same ProfileStore name as before in <code>Store</code>, so existing saves load unchanged. Then remove the old DataService copies.</li>
+  <li><strong>Press Play.</strong> <code>Branch:GetReport()</code> shows every segment and its status.</li>
+</ol>
+
+<h2>What you get for free</h2>
+<ul>
+  <li>The <code>Timer</code> from Branch 1 is fixed:
+    <ul>
+      <li>a pause no longer counts as elapsed time;</li>
+      <li><code>IncrementTime</code> keeps the queue in order;</li>
+      <li><code>Stop</code> wakes threads waiting in <code>Wait</code>;</li>
+      <li>callbacks never run twice, and a callback that errors cannot break other timers.</li>
+    </ul>
+  </li>
+  <li>A helper nested inside a segment is no longer started as a segment of its own.</li>
+  <li>DataService no longer holds a player's session lock when they leave during loading.</li>
+</ul>
+</main>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

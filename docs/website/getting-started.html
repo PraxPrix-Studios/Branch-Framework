@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Getting started · Branch</title>
+<meta name="description" content="Install Branch, start it on the server and the client, and write your first service and controller.">
+<link rel="icon" href="assets/mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body data-root="" data-page="getting-started">
+<div class="layout">
+<aside class="side" id="sidebar" aria-label="Documentation"></aside>
+<main class="doc">
+<div class="eyebrow">start/getting-started</div>
+<h1>Getting started</h1>
+<p class="lead">From an empty place to a running service and controller in five steps.</p>
+
+<h2>1. Install</h2>
+<p>Pick one way to get the runtime into <code>ReplicatedStorage.Packages.Branch</code>:</p>
+<ul>
+  <li><strong>Branch Studio (easiest).</strong> Install the plugin, open the <b>Branch</b> toolbar, and press <b>Install</b> on the Overview page. The plugin writes the runtime for you and can update it later without losing your settings or generated files.</li>
+  <li><strong>pesde.</strong> <code>pesde add realllityyy/branch</code></li>
+  <li><strong>Rojo.</strong> Build the repository's <code>src/</code> folder (<code>rojo build -o Branch.rbxm</code>) and put the model in <code>ReplicatedStorage.Packages</code>.</li>
+</ul>
+<div class="note"><b>Tip:</b> even if you install with pesde or Rojo, use Branch Studio while you work. It compiles your networking and typed autocomplete as you type.</div>
+
+<h2>2. Make the folders</h2>
+<pre><code class="plain">ServerScriptService
+├─ Main                (Script)
+└─ Services            (Folder)  ← server segments
+StarterPlayer
+└─ StarterPlayerScripts
+   ├─ Main             (LocalScript)
+   └─ Controllers      (Folder)  ← client segments</code></pre>
+<p>These are the default roots Branch Studio watches. You can change them in <b>Settings → Paths</b>.</p>
+
+<h2>3. Start Branch</h2>
+<p>Start Branch once on each side:</p>
+<pre><code>-- ServerScriptService/Main (Script)
+local Branch = require(game.ReplicatedStorage.Packages.Branch)
+Branch:Start(script.Parent.Services)</code></pre>
+<pre><code>-- StarterPlayerScripts/Main (LocalScript)
+local Branch = require(game.ReplicatedStorage.Packages.Branch)
+Branch:Start(script.Parent:WaitForChild("Controllers"))</code></pre>
+
+<h2>4. Your first service</h2>
+<p>A module whose name ends with <code>Service</code> is a server segment. Create <code>Services/GreetService</code>:</p>
+<pre><code>local GreetService = {}
+
+function GreetService:Init()
+	-- runs first, one segment at a time: set up state here
+	self.greeted = 0
+end
+
+function GreetService:Start()
+	-- runs after every segment's Init, in its own thread
+	print("GreetService started")
+end
+
+function GreetService:PlayerAdded(player)
+	-- runs for players already in the game and every new one
+	self.greeted += 1
+	print(`Hello, {player.Name}! ({self.greeted})`)
+end
+
+return GreetService</code></pre>
+<p>A module whose name ends with <code>Controller</code> is a client segment. Create <code>Controllers/CameraController</code>:</p>
+<pre><code>local CameraController = {}
+
+function CameraController:Start()
+	print("the client is ready")
+end
+
+function CameraController:PreRender(dt)
+	-- every frame, before rendering (client only)
+end
+
+return CameraController</code></pre>
+<p>Press Play. Both segments start, and <code>Branch:GetReport()</code> lists them with their status and how long their <code>Init</code> took.</p>
+
+<h2>5. Add data and networking</h2>
+<p>Add a <code>PlayerService</code> that starts <code>Branch.Data</code>:</p>
+<pre><code>local Branch = require(game.ReplicatedStorage.Packages.Branch)
+
+local PlayerService = {}
+
+function PlayerService:Init()
+	Branch.Data.Server.Start({
+		Template = { coins = 0, stats = { kills = 0 } },
+		Mock = game:GetService("RunService"):IsStudio(), -- no real saves while testing
+		Leaderstats = { "coins" },
+	})
+end
+
+return PlayerService</code></pre>
+<p>Then turn on <b>Compiled networking</b> in Branch Studio's Overview and declare events on any service:</p>
+<pre><code>GreetService.Network = {
+	Wave = { From = "Client" },                    -- no data
+	Waved = { From = "Server", Data = "string" },  -- one string
+}</code></pre>
+<pre><code>-- server
+Branch.Network.Server.GreetService.Wave.On(function(player)
+	Branch.Network.Server.GreetService.Waved.FireAll(player.Name)
+end)
+
+-- client
+Branch.Network.Client.GreetService.Waved.On(function(name)
+	print(name, "waved")
+end)
+Branch.Network.Client.GreetService.Wave.Fire()</code></pre>
+
+<h2>Where next</h2>
+<ul>
+  <li><a href="guide/segments.html">Segments</a>: the lifecycle, dependencies, hooks and what happens on errors.</li>
+  <li><a href="guide/data.html">Player data</a>: templates, migrations, leaderstats and observers.</li>
+  <li><a href="guide/network.html">Networking</a>: events, functions, types and guarantees.</li>
+  <li><a href="api/branch.html">API reference</a>: every function, with its signature.</li>
+</ul>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

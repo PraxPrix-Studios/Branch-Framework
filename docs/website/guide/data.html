@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Player data · Branch</title>
+<meta name="description" content="Branch.Data: player data on ProfileStore with typed paths, template checks, migrations, leaderstats and observers.">
+<link rel="icon" href="../assets/mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-root="../" data-page="guide/data">
+<div class="layout">
+<aside class="side" id="sidebar" aria-label="Documentation"></aside>
+<main class="doc">
+<div class="eyebrow">guide/data</div>
+<h1>Player data</h1>
+<p class="lead"><code>Branch.Data</code> keeps each player's data in ProfileStore (through DataService) and mirrors it to their client. You describe the data once, as a template, and Branch refuses any write that does not fit it.</p>
+
+<h2>Start it once</h2>
+<pre><code>-- server, e.g. in PlayerService:Init
+local Data = Branch.Data.Server
+
+Data.Start({
+	Template = {
+		coins = 0,
+		stats = { kills = 0, best = 0 },
+		items = {},                       -- an array
+		friends = {},                     -- a dictionary (e.g. by UserId)
+	},
+	Store = "PlayerData",                -- ProfileStore name (this is the default)
+	Mock = game:GetService("RunService"):IsStudio(),
+	Leaderstats = { "coins" },
+	Migrations = {},
+})</code></pre>
+<p>Every option is described in the <a href="../api/data-server.html#start">API reference</a>. With Branch Studio, keep the template in its own ModuleScript and point <b>Settings → Paths → Data template</b> at it: you get autocomplete for every path.</p>
+
+<h2>Paths</h2>
+<p>You read and write with dot paths: <code>"coins"</code>, <code>"stats.kills"</code>, <code>"items.3.id"</code>. They are parsed once and cached.</p>
+<ul>
+  <li><strong>Numbers in a path.</strong> A numeric part indexes an array. In a dictionary it reaches the string key, so <code>"friends.12345"</code> works for UserId-keyed maps.</li>
+  <li><strong>Before the data loads.</strong> Reads return <code>nil</code>. Writes raise an error that tells you to wait with <code>Data.Await(player)</code> or <code>Data.OnLoaded</code>.</li>
+</ul>
+<pre><code>local Data = Branch.Data.Server
+
+Data.Get(player, "stats.kills")              -- nil until loaded
+Data.Set(player, "coins", 5)
+Data.Increment(player, "coins")              -- +1, returns the new value
+Data.Increment(player, "coins", -3)
+Data.Update(player, "stats.best", function(old) return math.max(old, 10) end)
+Data.Insert(player, "items", { id = 7 })     -- append (or pass an index to insert there)
+Data.Remove(player, "items", 1)              -- returns the removed value</code></pre>
+
+<h2>What Branch refuses</h2>
+<ul>
+  <li><strong>Values that do not fit the template.</strong> Checks go all the way down: a nested table with a missing key or a wrong type is refused. If an array in the template holds an element, <code>Insert</code> checks new elements against it.</li>
+  <li><strong>NaN and infinity</strong>, in any write, including nested tables. DataStores cannot store them, and a single one (a division by zero, say) would make every later save of the profile fail.</li>
+</ul>
+<p>A refused write raises an error at your call, so the bug shows up where it happened, not later in a broken save.</p>
+<div class="note warn"><b>Array elements in the template are real data.</b> ProfileStore copies the template into every new profile. With <code>items = { { id = 0 } }</code>, <code>Insert</code> checks new items against <code>{ id = 0 }</code>, but every new player also starts with that item in their array. Use it only when that item is a real starting item; otherwise keep the array empty (<code>items = {}</code>). An empty array is not shape-checked on <code>Insert</code>, but NaN and infinity still are.</div>
+
+<h2>Reacting to changes</h2>
+<pre><code>local stop = Data.Observe(player, "coins", function(new, old)
+	print("coins:", old, "->", new)
+end)
+-- later: stop()
+
+Data.OnLoaded(function(player, data)
+	-- every player whose data is already loaded, then each new one
+end)
+
+local data = Data.Await(player) -- yields; nil if they leave first</code></pre>
+<p><code>Observe</code> runs once straight away (once the data is loaded) and after every change. It also fires when a parent table is replaced: <code>Set(player, "stats", {...})</code> reaches observers of <code>"stats.kills"</code>.</p>
+
+<h2>On the client</h2>
+<p><code>Branch.Data.Client</code> is a read-only mirror of the local player's data. It starts syncing as soon as it is required; there is nothing to start.</p>
+<pre><code>local Data = Branch.Data.Client
+
+Data.Observe("coins", function(coins) label.Text = coins end)
+Data.OnInserted("items", function(index, item) end)
+Data.OnRemoved("items", function(index, item) end)
+local data = Data.Await()</code></pre>
+<p>If the server never calls <code>Data.Start</code>, the client warns after 15 seconds instead of waiting silently.</p>
+
+<h2>Leaderstats</h2>
+<pre><code>Leaderstats = { "coins", "stats.kills" }               -- names: "coins", "kills"
+Leaderstats = { coins = "Coins", ["stats.kills"] = "Kills" } -- path = display name</code></pre>
+<ul>
+  <li><strong>Value types.</strong> Numbers use <code>NumberValue</code>, so fractions are never cut off. Booleans use <code>BoolValue</code>, everything else <code>StringValue</code>.</li>
+  <li><strong>Your own leaderstats.</strong> If the game already made a value with the same name and class, Branch drives that one instead of adding a duplicate.</li>
+</ul>
+
+<h2 id="migrations">Migrations</h2>
+<p>When the shape of your data changes, add a migration. <code>Migrations[n]</code> upgrades a profile from version <code>n-1</code> to <code>n</code>:</p>
+<pre><code>Migrations = {
+	function(data) data.stats.best = data.stats.best or 0 end,   -- v0 -> v1
+	function(data) data.coins = data.coins * 10 end,            -- v1 -> v2: coins are worth less now
+}</code></pre>
+<ul>
+  <li><strong>When they run.</strong> Migrations run right after the profile loads, before the client ever sees the data.</li>
+  <li><strong>New profiles.</strong> A brand-new profile already has the newest shape, so no migrations run on it.</li>
+  <li><strong>Failures.</strong> Migrations run on a copy. If one fails, the saved data is left exactly as it was, the error names the migration, and the player is asked to rejoin. Data is never saved half-upgraded.</li>
+</ul>
+<div class="note warn"><b>Only append.</b> Never edit or reorder a migration that already shipped: profiles remember which version they reached.</div>
+
+<h2>When a player leaves</h2>
+<p>Segments' <code>PlayerRemoving</code> hooks can still read and write the leaving player's data. The profile is released on the next resumption point, after every leave handler has run, and those writes are saved with the session. Write before your hook yields (<code>task.wait</code>, web calls).</p>
+
+<h2>Offline players and messages</h2>
+<pre><code>local saved = Data.Peek(userId)                       -- read an offline player's data (yields)
+Data.Send(userId, "Gift", { "sword" })                -- delivered when they are online
+Data.OnMessage("Gift", function(player, payload) ... end)
+Data.Reset(player)                                    -- wipe the profile and kick
+local profile = Data.GetProfile(player)               -- the raw profile, if you need it</code></pre>
+</main>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

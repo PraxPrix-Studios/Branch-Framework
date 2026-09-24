@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Branch.Network · Branch</title>
+<meta name="description" content="API reference for Branch.Network: Fire, FireAll, FireList, FireExcept, On, Invoke and OnReject.">
+<link rel="icon" href="../assets/mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-root="../" data-page="api/network">
+<div class="layout">
+<aside class="side" id="sidebar" aria-label="Documentation"></aside>
+<main class="doc">
+<div class="eyebrow">api/network</div>
+<h1>Branch.<wbr>Network</h1>
+<p class="lead">The code Branch Studio generates from your <code>Service.Network</code> declarations. Every event and function gets its own typed functions, so autocomplete shows the exact arguments.</p>
+<pre><code>Branch.Network.Server.&lt;Service&gt;.&lt;Event&gt;   -- on the server
+Branch.Network.Client.&lt;Service&gt;.&lt;Event&gt;   -- on a client
+Branch.Network.OnReject                    -- on the server</code></pre>
+<p>In the signatures below, <code>...args</code> stands for the arguments your <code>Data</code> declares: nothing, one value, a tuple, a struct table, or the struct's fields with <code>Unpack</code>. See <a href="../guide/network.html#declare">Declare</a>.</p>
+<div class="note">
+  <p><b>When it works:</b></p>
+  <ul>
+    <li>Using <code>Server</code> on a client, or <code>Client</code> on the server, is an error.</li>
+    <li>Outside a running game (plugins, the command bar), every call does nothing.</li>
+  </ul>
+</div>
+
+<h2>Server → client events</h2>
+<p>Declared with <code>From = "Server"</code>. Used from the server; received on clients.</p>
+
+<div class="api" id="fire">
+<h3>Event.Fire <span class="tag">server</span></h3>
+<div class="sig">Server.Service.Event.<b>Fire</b>(player: Player, ...args)</div>
+<p>Sends to one player. Batched with that player's other events this frame.</p>
+</div>
+<div class="api" id="fireall">
+<h3>Event.FireAll <span class="tag">server</span></h3>
+<div class="sig">Server.Service.Event.<b>FireAll</b>(...args)</div>
+<p>Sends to every player. The frame's broadcasts go out once, through <code>FireAllClients</code>, and each player still receives everything in order.</p>
+</div>
+<div class="api" id="firelist">
+<h3>Event.FireList <span class="tag">server</span></h3>
+<div class="sig">Server.Service.Event.<b>FireList</b>(players: { Player }, ...args)</div>
+<p>Sends to each player in the list.</p>
+</div>
+<div class="api" id="fireexcept">
+<h3>Event.FireExcept <span class="tag">server</span></h3>
+<div class="sig">Server.Service.Event.<b>FireExcept</b>(except: Player, ...args)</div>
+<p>Sends to every player but one.</p>
+</div>
+<div class="api" id="client-on">
+<h3>Event.On <span class="tag">client</span></h3>
+<div class="sig">Client.Service.Event.<b>On</b>(listener: (...args) -&gt; ()): () -&gt; ()</div>
+<p>Listens for the event. Returns a function that disconnects the listener. Events that arrived before the first listener are queued and delivered to it.</p>
+</div>
+
+<h2>Client → server events</h2>
+<p>Declared with <code>From = "Client"</code>. Used from a client; received on the server.</p>
+<div class="api" id="client-fire">
+<h3>Event.Fire <span class="tag">client</span></h3>
+<div class="sig">Client.Service.Event.<b>Fire</b>(...args)</div>
+<p>Sends to the server, batched with the client's other events this frame.</p>
+</div>
+<div class="api" id="server-on">
+<h3>Event.On <span class="tag">server</span></h3>
+<div class="sig">Server.Service.Event.<b>On</b>(listener: (player: Player, ...args) -&gt; ()): () -&gt; ()</div>
+<p>Listens for the event. <code>player</code> is who sent it, and every argument has already been validated against your declaration. Returns a function that disconnects the listener.</p>
+</div>
+
+<h2>Functions</h2>
+<p>Declared with a <code>Return</code>. A client asks, the server answers.</p>
+<div class="api" id="invoke">
+<h3>Function.Invoke <span class="tag">client · yields</span></h3>
+<div class="sig">Client.Service.Function.<b>Invoke</b>(...args): ...returns</div>
+<p>Sends the request at once (it does not wait for the end of the frame) and yields for the answer. Raises an error if the server's handler errored, or if the request could not be queued on the server.</p>
+</div>
+<div class="api" id="handler">
+<h3>Function.On <span class="tag">server</span></h3>
+<div class="sig">Server.Service.Function.<b>On</b>(handler: (player: Player, ...args) -&gt; ...returns)</div>
+<p>Sets the one handler for the function. Setting it again replaces the old one. Requests that arrived before the handler was set are answered once it is.</p>
+</div>
+
+<h2>Rejected packets</h2>
+<div class="api" id="onreject">
+<h3>Branch.Network.OnReject <span class="tag">server</span></h3>
+<div class="sig">Branch.Network.<b>OnReject</b>(handler: (player: Player, reason: string) -&gt; ()): () -&gt; ()</div>
+<p>Called when a client sends a packet that fails validation: wrong sizes, out-of-range values, NaN, wrong Instance classes, forged lengths or oversized packets. The packet is dropped either way. Use it to log or kick exploiters. Returns a function that removes the handler.</p>
+<pre><code>Branch.Network.OnReject(function(player, reason)
+	warn(`{player.Name}: {reason}`)
+end)</code></pre>
+</div>
+
+<h2>Listener modes</h2>
+<div class="tbl"><table>
+<thead><tr><th><code>Call</code></th><th>How listeners run</th></tr></thead>
+<tbody>
+<tr><td><code>"Async"</code> (default)</td><td>Each call runs in a pooled thread, so a listener may yield freely.</td></tr>
+<tr><td><code>"Sync"</code></td><td>Listeners run inline, in the receive loop: the fastest option. A listener that yields does not corrupt later events, and one that errors is reported without dropping the rest of the packet.</td></tr>
+</tbody></table></div>
+</main>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

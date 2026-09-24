@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Networking · Branch</title>
+<meta name="description" content="Branch.Network: declare events and functions on your services and get compiled, validated, batched buffer networking.">
+<link rel="icon" href="../assets/mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-root="../" data-page="guide/network">
+<div class="layout">
+<aside class="side" id="sidebar" aria-label="Documentation"></aside>
+<main class="doc">
+<div class="eyebrow">guide/network</div>
+<h1>Networking</h1>
+<p class="lead">You declare what travels between the server and players. Branch Studio turns those declarations into specialised code that writes every value into buffers, batches a frame's events into one remote call per player, and validates everything a client sends.</p>
+
+<h2>Turn it on</h2>
+<p>In Branch Studio's Overview page, switch on <b>Compiled networking</b>. The plugin then keeps <code>Branch.Network</code> up to date as you type. Until it is on, reading <code>Branch.Network</code> raises an error that tells you so.</p>
+
+<h2 id="declare">Declare</h2>
+<p>Add a <code>Network</code> table to a <strong>server segment</strong>:</p>
+<pre><code>local CombatService = {}
+
+CombatService.Network = {
+	Hit    = { From = "Client", Type = "Unreliable", Data = { Target = "Instance(Model)", Power = "f32(0..1, 0.01)" } },
+	Damage = { From = "Server", Data = { "u16", "boolean" } },      -- two arguments
+	Move   = { From = "Server", Unpack = true, Data = { pos = "vector", yaw = "f32" } },
+	Buy    = { Data = "string(..32)", Return = "boolean" },         -- a function
+	Ready  = { From = "Client" },                                   -- no data
+}
+
+return CombatService</code></pre>
+<div class="note"><b>Write it as a plain table.</b> The plugin reads the declaration from your source code, so it must be a literal table: no variables, loops or function calls inside it.</div>
+
+<h3>Options</h3>
+<div class="tbl"><table>
+<thead><tr><th>Option</th><th>Values</th><th>Default</th></tr></thead>
+<tbody>
+<tr><td><code>From</code></td><td><code>"Server"</code> or <code>"Client"</code>: who sends it.</td><td>Required for events. Functions are always sent by the client.</td></tr>
+<tr><td><code>Type</code></td><td><code>"Reliable"</code> or <code>"Unreliable"</code>.</td><td><code>"Reliable"</code></td></tr>
+<tr><td><code>Call</code></td><td><code>"Async"</code>: each listener call runs in a pooled thread. <code>"Sync"</code>: listeners run inline in the receive loop, the fastest option.</td><td><code>"Async"</code></td></tr>
+<tr><td><code>Data</code></td><td>What travels (see below).</td><td>Nothing</td></tr>
+<tr><td><code>Return</code></td><td>What a function returns. Its presence makes the entry a function.</td><td>None</td></tr>
+<tr><td><code>Unpack</code></td><td><code>true</code>: a struct travels as separate arguments instead of a table, and no table is built on either side.</td><td><code>false</code></td></tr>
+</tbody></table></div>
+<p>A typo in an option name is a compile error that suggests the right one: <code>Tpye</code> gives <em>did you mean "Type"?</em></p>
+
+<h3>The shape of <code>Data</code></h3>
+<div class="tbl"><table>
+<thead><tr><th>You write</th><th>You send</th></tr></thead>
+<tbody>
+<tr><td>nothing</td><td>no arguments: <code>Fire()</code></td></tr>
+<tr><td><code>Data = "u8"</code></td><td>one value: <code>Fire(5)</code></td></tr>
+<tr><td><code>Data = { "u16", "boolean" }</code></td><td>a tuple, one argument each: <code>Fire(25, true)</code></td></tr>
+<tr><td><code>Data = { pos = "vector", yaw = "f32" }</code></td><td>a struct, one table: <code>Fire({ pos = p, yaw = 1.5 })</code></td></tr>
+<tr><td>the same with <code>Unpack = true</code></td><td>the struct's fields as arguments, in the order you declared them: <code>Fire(p, 1.5)</code></td></tr>
+</tbody></table></div>
+<p>Every type you can use, from <code>u8</code> to <code>{ [K]: V }</code>, is listed in <a href="../api/types.html">Network types</a>.</p>
+
+<h2>Use</h2>
+<pre><code>-- server
+local Net = Branch.Network.Server.CombatService
+
+Net.Damage.Fire(player, 25, true)                 -- one player
+Net.Damage.FireAll(25, true)                      -- everyone
+Net.Damage.FireList({ a, b }, 25, true)           -- a list of players
+Net.Damage.FireExcept(player, 25, true)           -- everyone but one
+Net.Hit.On(function(player, hit) end)             -- client -> server event
+Net.Buy.On(function(player, item) return true end) -- a function's handler
+
+-- client
+local Net = Branch.Network.Client.CombatService
+
+Net.Hit.Fire({ Target = model, Power = 0.8 })
+Net.Damage.On(function(amount, crit) end)
+Net.Move.On(function(pos, yaw) end)
+local ok = Net.Buy.Invoke("sword")                -- yields for the answer</code></pre>
+<ul>
+  <li><strong><code>On</code> for events</strong> returns a function that disconnects the listener. An event can have many listeners.</li>
+  <li><strong><code>On</code> for functions</strong> sets the one handler. Setting it again replaces it.</li>
+  <li><strong><code>Invoke</code></strong> raises an error on the client if the server's handler errored. It also errors if the call could not be queued.</li>
+</ul>
+
+<h2>How it travels</h2>
+<ul>
+  <li><strong>Batched per frame.</strong> Everything you fire for a player in one frame leaves as one remote call. <code>FireAll</code> goes out once, through <code>FireAllClients</code>.</li>
+  <li><strong>Exact order.</strong> Each player receives events in the order they were fired, even when <code>Fire</code>, <code>FireAll</code> and <code>FireList</code> are mixed.</li>
+  <li><strong>Compact.</strong>
+    <ul><li>Booleans and optional flags are packed into bits, and short lengths take one byte.</li><li>A repeated event is written without its id; the id goes once for the whole run.</li><li>Stepped numbers such as <code>f32(0..1, 0.01)</code> travel as a small step index.</li></ul>
+  </li>
+  <li><strong>Unreliable under the limit.</strong> Unreliable events are batched into packets under a safe budget (820 bytes by default). Roblox drops unreliable packets above about 900 bytes. Unreliable traffic sent during the first seconds of a join can be dropped while Roblox replicates the world, so use Reliable for anything that must arrive.</li>
+  <li><strong>Function calls go out at once</strong> and do not wait for the end of the frame.</li>
+</ul>
+
+<h2>Safety</h2>
+<ul>
+  <li><strong>Everything from clients is validated</strong> before any listener sees it: bounds, ranges, NaN and infinity, enum values, Instance classes, string and array lengths (checked before anything is allocated) and packet size.</li>
+  <li><strong>Rejected packets.</strong> A malformed packet is dropped and reported through <code>Branch.Network.OnReject</code>, so you can log or kick:
+<pre><code>Branch.Network.OnReject(function(player, reason)
+	warn(player.Name, "sent a bad packet:", reason)
+end)</code></pre></li>
+  <li><strong>Bad arguments.</strong> A bad argument to <code>Fire</code> errors at your call and never corrupts the other events of the frame. These argument checks run in Studio by default (<b>Settings → Network → Argument checks</b>).</li>
+  <li><strong>Errors in your own <code>Sync</code> listener</strong> are your game's bug, not the player's. The error is printed with its traceback, <code>OnReject</code> is not called, and the rest of the packet is still delivered.</li>
+  <li><strong>Before a listener exists.</strong> Events that arrive before anyone listens are queued (256 by default) and delivered when a listener connects. A function call that finds its queue full is answered with a failure instead of hanging.</li>
+</ul>
+
+<h2>Where the plugin looks</h2>
+<ul>
+  <li><strong>Which folders.</strong> Branch Studio reads declarations from the roots in <b>Settings → Paths</b> (<code>ServerScriptService.Services</code> by default). If your game passes other folders to <code>Branch:Start</code>, set them there too: the plugin cannot know what the game will pass at run time.</li>
+  <li><strong>Mistakes.</strong> Luau keywords (<code>end</code>, <code>local</code>, …) are refused as names. A mistyped <code>Enum(...)</code> is an error, and an unknown <code>Instance(...)</code> class is a warning. While a declaration has an error, the last working <code>Branch.Network</code> stays in place.</li>
+  <li><strong>Outside a running game</strong> (plugins, the command bar), every <code>Branch.Network</code> call does nothing, so tooling that requires your services does not break.</li>
+</ul>
+</main>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

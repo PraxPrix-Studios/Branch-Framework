@@ -1,0 +1,24 @@
+name = "realllityyy/branch"
+version = "2.0.0"
+description = "A Roblox game framework: segment loader with a strict lifecycle, player data on ProfileStore, compiled networking (with the free Branch Studio plugin)."
+license = "MIT"
+authors = ["realllity"]
+repository = "https://github.com/PraxPrix-Studios/Branch-Framework"
+
+includes = [
+	"pesde.toml",
+	"README.md",
+	"/docs/markdowns/Documentation.md",
+	"LICENSE",
+	"/docs/markdowns/ThirdPartyDocs.md",
+	"/docs/markdowns/changelog.md",
+	"src/**/*.luau",
+]
+
+[target]
+environment = "roblox"
+lib = "src/init.luau"
+build_files = ["src"]
+
+[indices]
+default = "https://github.com/pesde-pkg/index"

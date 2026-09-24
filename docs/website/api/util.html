@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Utilities · Branch</title>
+<meta name="description" content="API reference for Branch's utilities: Scythe (cleanup scopes), ThreadReaper (pooled threads and timers) and Timer.">
+<link rel="icon" href="../assets/mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-root="../" data-page="api/util">
+<div class="layout">
+<aside class="side" id="sidebar" aria-label="Documentation"></aside>
+<main class="doc">
+<div class="eyebrow">api/util</div>
+<h1>Utilities</h1>
+<p class="lead">Three small modules ship inside the package. They are ModuleScripts, not fields of <code>Branch</code>, so require them directly:</p>
+<pre><code>local Util = game.ReplicatedStorage.Packages.Branch.Util
+local Scythe = require(Util.Scythe)
+local ThreadReaper = require(Util.ThreadReaper)
+local Timer = require(Util.Timer)</code></pre>
+
+<h2 id="scythe">Scythe</h2>
+<p>Cleanup without objects. A <em>scope</em> is a plain number handle. You add things to it, and cleaning the scope disposes all of them, newest first. Unlike Maid or Trove there are no objects or metatables, so creating a scope costs almost nothing.</p>
+<pre><code>local scope = Scythe.scope()
+Scythe.add(scope, workspace.Part)                  -- :Destroy()
+Scythe.add(scope, humanoid.Died:Connect(onDied))   -- :Disconnect()
+Scythe.add(scope, task.spawn(loop))                -- task.cancel()
+Scythe.add(scope, function() print("bye") end)     -- called
+
+Scythe.clean(scope)    -- dispose everything; the scope stays usable
+Scythe.destroy(scope)  -- dispose everything and retire the handle</code></pre>
+<div class="tbl"><table>
+<thead><tr><th>You add</th><th>Cleaning does</th></tr></thead>
+<tbody>
+<tr><td><code>RBXScriptConnection</code></td><td><code>:Disconnect()</code></td></tr>
+<tr><td><code>Instance</code></td><td><code>:Destroy()</code></td></tr>
+<tr><td>function</td><td>calls it</td></tr>
+<tr><td>thread</td><td><code>task.cancel</code></td></tr>
+<tr><td>table or userdata with <code>Destroy</code></td><td><code>:Destroy()</code></td></tr>
+<tr><td>table or userdata with <code>Disconnect</code></td><td><code>:Disconnect()</code></td></tr>
+<tr><td>another scope</td><td><code>Scythe.destroy</code> on it</td></tr>
+</tbody></table></div>
+
+<div class="api"><h3>Scythe.scope</h3><div class="sig">Scythe.<b>scope</b>(): Scope</div><p>A new, empty scope.</p></div>
+<div class="api"><h3>Scythe.add</h3><div class="sig">Scythe.<b>add</b>&lt;T&gt;(scope: Scope, value: T): T</div><p>Tracks <code>value</code> and returns it, so you can wrap creation: <code>local part = Scythe.add(scope, Instance.new("Part"))</code>. Errors if the value has no way to be cleaned up.</p></div>
+<div class="api"><h3>Scythe.addBulk</h3><div class="sig">Scythe.<b>addBulk</b>(scope: Scope, ...: unknown)</div><p>Tracks several values in one call. All or nothing: if any value cannot be cleaned up, none are added. <code>nil</code> in the list is an error.</p></div>
+<div class="api"><h3>Scythe.remove</h3><div class="sig">Scythe.<b>remove</b>(scope: Scope, value: unknown): boolean</div><p>Stops tracking <code>value</code> <em>without</em> disposing it, for when something else takes ownership. Returns whether it was found.</p></div>
+<div class="api"><h3>Scythe.clean</h3><div class="sig">Scythe.<b>clean</b>(scope: Scope)</div><p>Disposes everything, newest first, and keeps the scope ready for reuse. Every item is disposed even if some disposers error; the errors are raised together afterwards.</p></div>
+<div class="api"><h3>Scythe.destroy</h3><div class="sig">Scythe.<b>destroy</b>(scope: Scope)</div><p>Cleans the scope and retires its handle. Using the handle afterwards is an error, never a silent mix-up with a newer scope.</p></div>
+<div class="api"><h3>Scythe.count</h3><div class="sig">Scythe.<b>count</b>(scope: Scope): number</div><p>How many items the scope tracks.</p></div>
+<div class="api"><h3>Scythe.isAlive</h3><div class="sig">Scythe.<b>isAlive</b>(scope: Scope): boolean</div><p>Whether the handle points to a live scope.</p></div>
+<div class="note warn"><b>Disposers must not yield.</b> A disposer may add to, remove from, clean or destroy its own scope, but a yield would leave the scope half-cleaned for other threads.</div>
+
+<h2 id="threadreaper">ThreadReaper</h2>
+<p>Like <code>task.spawn</code>, <code>task.defer</code> and <code>task.delay</code>, but threads are reused from a pool, so spawning often costs less.</p>
+<div class="api"><h3>ThreadReaper.Spawn</h3><div class="sig">ThreadReaper.<b>Spawn</b>(callback: (...A) -&gt; (), ...: A)</div><p>Runs <code>callback</code> now, in a pooled thread.</p></div>
+<div class="api"><h3>ThreadReaper.Defer</h3><div class="sig">ThreadReaper.<b>Defer</b>(callback: (...A) -&gt; (), ...: A)</div><p>Runs <code>callback</code> at the next resumption point, like <code>task.defer</code>.</p></div>
+<div class="api"><h3>ThreadReaper.Delay</h3><div class="sig">ThreadReaper.<b>Delay</b>(duration: number, callback: (...A) -&gt; (), ...: A): number</div><p>Runs <code>callback</code> after <code>duration</code> seconds and returns a token for <code>Cancel</code>. A negative duration means "now"; NaN is an error. <code>ThreadReaper.Timeout</code> is the same function.</p></div>
+<div class="api"><h3>ThreadReaper.Cancel</h3><div class="sig">ThreadReaper.<b>Cancel</b>(token: number): boolean</div><p>Cancels a pending <code>Delay</code>. Returns whether it was still pending.</p></div>
+<div class="api"><h3>ThreadReaper.Reserve</h3><div class="sig">ThreadReaper.<b>Reserve</b>(count: number)</div><p>Pre-creates up to <code>count</code> threads in the pool, so a later burst does not create them on the spot.</p></div>
+
+<h2 id="timer">Timer</h2>
+<p>Countdown timers that you can pause, resume, extend and wait on. Branch 2 fixes the Branch 1 bugs:</p>
+<ul>
+  <li>a pause no longer counts as elapsed time;</li>
+  <li>extending a timer keeps the queue in order;</li>
+  <li><code>Stop</code> wakes waiting threads;</li>
+  <li>callbacks never run twice, and one that errors cannot break other timers.</li>
+</ul>
+<pre><code>local round = Timer.new(90)          -- 90 seconds, not running yet
+round:OnFinished(function() print("time!") end)
+round:Start()
+
+task.wait(10)
+round:Pause()
+round:IncrementTime(15)              -- +15 seconds
+round:Resume()
+local state, elapsed = round:Wait()  -- yields until it finishes or stops</code></pre>
+
+<div class="api"><h3>Timer.new</h3><div class="sig">Timer.<b>new</b>(length: number): Timer</div><p>A timer of <code>length</code> seconds. It starts <code>Paused</code>: call <code>Start</code> (or <code>Resume</code>) to run it. Errors if <code>length</code> is not a number.</p></div>
+<div class="api"><h3>timer:Start</h3><div class="sig">timer:<b>Start</b>()      -- alias: Play</div><p>Starts, or restarts, from the full length.</p></div>
+<div class="api"><h3>timer:Pause / timer:Resume</h3><div class="sig">timer:<b>Pause</b>()
+timer:<b>Resume</b>()</div><p><code>Pause</code> freezes the remaining time. <code>Resume</code> continues from there and errors if the timer is not paused.</p></div>
+<div class="api"><h3>timer:Stop</h3><div class="sig">timer:<b>Stop</b>()       -- aliases: Cancel, Kill</div><p>Ends a running or paused timer with the state <code>Stopped</code>, runs its callbacks and wakes waiting threads. Does nothing on a timer that already ended.</p></div>
+<div class="api"><h3>timer:Wait</h3><div class="sig">timer:<b>Wait</b>(): (state: string, elapsed: number)   -- alias: Yield</div><p>Yields until the timer finishes or stops and returns how it ended (<code>"Finished"</code> or <code>"Stopped"</code>) and the elapsed seconds. On a timer that already ended, it returns at once.</p></div>
+<div class="api"><h3>timer:IncrementTime</h3><div class="sig">timer:<b>IncrementTime</b>(delta: number)</div><p>Adds <code>delta</code> seconds (negative to shorten), whether the timer is running or paused.</p></div>
+<div class="api"><h3>Reading</h3><div class="sig">timer:<b>GetLength</b>(): number
+timer:<b>GetRemaining</b>(): number
+timer:<b>GetState</b>(): string
+timer:<b>IsRunning</b>() / <b>IsPaused</b>() / <b>IsFinished</b>() / <b>IsStopped</b>() / <b>IsDead</b>() / <b>IsDied</b>()</div></div>
+<div class="api"><h3>Callbacks</h3><div class="sig">timer:<b>OnRunning</b>(fn)   timer:<b>OnPaused</b>(fn)
+timer:<b>OnFinished</b>(fn)  timer:<b>OnStopped</b>(fn)
+timer:<b>OnDead</b>(fn)      timer:<b>OnDied</b>(fn)
+timer.<b>Callback</b> = fn</div>
+<p>Each <code>On…</code> adds a callback for that state, called as <code>fn(state, seconds)</code> in its own thread. <code>OnDead</code> and <code>OnDied</code> fire when the timer ends, finished or stopped. <code>timer.Callback</code>, if set, is called with the final state.</p></div>
+<div class="api"><h3>States</h3><div class="sig">Timer.<b>Enums</b>   -- also Timer:GetEnums()
+"Running" | "Paused" | "Finished" | "Stopped" | "Dead" | "Died"</div><p>After a timer ends, <code>GetState</code> reports <code>"Dead"</code>; <code>Wait</code> still tells you whether it finished or was stopped.</p></div>
+
+<h2>Credits</h2>
+<p>Scythe is by checcerr and fridayqx (MPL-2.0). ThreadReaper is by divine.no. Both came to Branch from Branch 1.</p>
+</main>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

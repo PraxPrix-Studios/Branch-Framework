@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Branch · Roblox game framework</title>
+<meta name="description" content="Branch is a Roblox game framework: segments with a strict lifecycle, player data that cannot be corrupted, and compiled networking that outruns Blink and NetRay.">
+<link rel="icon" href="assets/mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body data-root="" data-page="index">
+<div class="layout">
+<aside class="side" id="sidebar" aria-label="Documentation"></aside>
+<main class="doc">
+<section class="hero">
+  <img class="mark" src="assets/mark.png" alt="Branch logo">
+  <h1>Build Roblox games on <em>Branch</em></h1>
+  <p class="lead">A game framework that stays out of your way. Split your game into services and controllers, keep player data safe, and send data between server and players faster than any other Roblox networking library we measured.</p>
+  <div class="cta">
+    <a class="btn primary" href="getting-started.html">Get started</a>
+    <a class="btn" href="api/branch.html">API reference</a>
+    <a class="btn" href="benchmarks.html">Benchmarks</a>
+  </div>
+</section>
+
+<h2>Three parts that work together</h2>
+<ul class="pillars">
+  <li><b>Segments</b><span>Your game is made of <em>segments</em>: modules named <code>…Service</code> on the server and <code>…Controller</code> on the client. Branch finds them, runs <code>Init</code> in dependency order, then <code>Start</code>, and gives you player and frame hooks. <a href="guide/segments.html">Segments guide</a></span></li>
+  <li><b>Branch.Data</b><span>Player data on ProfileStore, with typed paths like <code>"stats.kills"</code>. Every write is checked against your template, so a typo, a wrong type or a NaN can never reach a save. <a href="guide/data.html">Player data guide</a></span></li>
+  <li><b>Branch.Network</b><span>Declare events on your services and get compiled buffer networking with batching, bit-packing and server-side validation. It beats Blink and NetRay in every benchmark except a function round trip, which ties. <a href="guide/network.html">Networking guide</a></span></li>
+</ul>
+
+<h2>A taste</h2>
+<pre><code>-- ServerScriptService/Services/CoinService
+local Branch = require(game.ReplicatedStorage.Packages.Branch)
+
+local CoinService = { Dependencies = { "PlayerService" } }
+
+CoinService.Network = {
+	Collect = { From = "Client", Data = "u16" },                -- coin id
+	Coins   = { From = "Server", Data = "u32" },
+}
+
+function CoinService:Start()
+	local Data = Branch.Data.Server
+	local Net = Branch.Network.Server.CoinService
+
+	Net.Collect.On(function(player, coinId)
+		local coins = Data.Increment(player, "coins", 5)
+		Net.Coins.Fire(player, coins)
+	end)
+end
+
+return CoinService</code></pre>
+<p>The plugin compiles <code>CoinService.Network</code> into fast, typed networking code as you type. On the client, <code>Branch.Network.Client.CoinService.Coins.On(...)</code> receives the update.</p>
+
+<h2>Get it</h2>
+<ul>
+  <li><strong>Runtime</strong>: free and open source (MIT). With pesde: <code>pesde add realllityyy/branch</code>. Or build <code>src/</code> with Rojo.</li>
+  <li><strong>Branch Studio</strong>: the free plugin that installs and updates the runtime and compiles your types and networking. It is free to use but not open source.</li>
+</ul>
+<p><a href="getting-started.html">Getting started</a> walks you through the first service and controller.</p>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

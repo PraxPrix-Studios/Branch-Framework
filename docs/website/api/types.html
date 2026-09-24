@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Network types · Branch</title>
+<meta name="description" content="Every type you can declare in Branch.Network: numbers, ranges, stepped numbers, strings, vectors, Instances, enums, arrays, maps, structs and optionals.">
+<link rel="icon" href="../assets/mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-root="../" data-page="api/types">
+<div class="layout">
+<aside class="side" id="sidebar" aria-label="Documentation"></aside>
+<main class="doc">
+<div class="eyebrow">api/types</div>
+<h1>Network types</h1>
+<p class="lead">The types you can write in a declaration's <code>Data</code> and <code>Return</code>. Each one decides both what the wire carries and what the server accepts from clients.</p>
+
+<h2>Numbers</h2>
+<div class="tbl"><table>
+<thead><tr><th>Type</th><th>Bytes</th><th>Range</th></tr></thead>
+<tbody>
+<tr><td><code>u8</code> / <code>u16</code> / <code>u32</code></td><td>1 / 2 / 4</td><td>whole numbers from 0 up to 255 / 65,535 / 4,294,967,295</td></tr>
+<tr><td><code>i8</code> / <code>i16</code> / <code>i32</code></td><td>1 / 2 / 4</td><td>whole numbers, ±127 / ±32,767 / ±2,147,483,647</td></tr>
+<tr><td><code>f16</code></td><td>2</td><td>±65,504, about 3 significant digits</td></tr>
+<tr><td><code>f32</code></td><td>4</td><td>about 7 significant digits</td></tr>
+<tr><td><code>f64</code> or <code>number</code></td><td>8</td><td>a full Luau number</td></tr>
+</tbody></table></div>
+
+<h3>Ranges</h3>
+<p>Add a range in brackets. The server refuses values outside it.</p>
+<pre><code>"u8(0..100)"      -- 0 to 100
+"i16(-500..)"     -- -500 or more
+"f32(..1)"        -- at most 1</code></pre>
+
+<h3>Stepped numbers</h3>
+<p>Add a step to a range, and the value travels as the index of the nearest step, in the smallest whole number that fits. It arrives rounded to your step.</p>
+<pre><code>"f32(0..1, 0.01)"        -- 101 steps: 1 byte instead of 4
+"f32(-180..180, 0.5)"    -- 721 steps: 2 bytes instead of 4</code></pre>
+<p>Out-of-range values error at the caller when argument checks are on, and are clamped to the range when they are off. The server rejects any step index past the end of the range.</p>
+
+<h2>Values</h2>
+<div class="tbl"><table>
+<thead><tr><th>Type</th><th>Carries</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><code>boolean</code></td><td><code>true</code> / <code>false</code></td><td>Packed into bits with the event's other booleans and optional flags.</td></tr>
+<tr><td><code>string</code></td><td>text</td><td>Length first, then bytes. Short strings spend 1 byte on the length.</td></tr>
+<tr><td><code>string(..32)</code></td><td>text of at most 32 bytes</td><td>Also <code>string(8)</code> for an exact length, or <code>string(4..16)</code>.</td></tr>
+<tr><td><code>buffer</code>, <code>buffer(..512)</code></td><td>a buffer</td><td>Length rules as for strings.</td></tr>
+<tr><td><code>vector</code></td><td>a <code>Vector3</code></td><td>Three <code>f32</code> (12 bytes). <code>vector(f16)</code> uses three <code>f16</code> (6 bytes); any number type works.</td></tr>
+<tr><td><code>CFrame</code></td><td>a <code>CFrame</code></td><td>24 bytes.</td></tr>
+<tr><td><code>Color3</code></td><td>a <code>Color3</code></td><td>3 bytes: one byte per channel, like <code>Color3.fromRGB</code>.</td></tr>
+<tr><td><code>Instance</code>, <code>Instance(Model)</code></td><td>an Instance</td><td>Travels as a Roblox reference, so it must exist on the receiving side. With a class, the server refuses Instances that are not <code>:IsA</code> it.</td></tr>
+<tr><td><code>Enum(KeyCode)</code></td><td>an <code>EnumItem</code> of that Enum</td><td>2 bytes. A mistyped Enum name is a compile error.</td></tr>
+<tr><td><code>enum(Idle, Run, Jump)</code></td><td>one of the strings <code>"Idle"</code>, <code>"Run"</code>, <code>"Jump"</code></td><td>1 byte (2 bytes above 256 values).</td></tr>
+<tr><td><code>unknown</code></td><td>any Roblox value except <code>nil</code></td><td>Travels as a Roblox value, with no checks and no compression. Use <code>unknown?</code> to allow <code>nil</code>.</td></tr>
+</tbody></table></div>
+
+<h2>Containers</h2>
+<div class="tbl"><table>
+<thead><tr><th>Type</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>T[]</code> or <code>{ T }</code></td><td>An array of <code>T</code>.</td></tr>
+<tr><td><code>T[..10]</code>, <code>T[4]</code>, <code>T[2..8]</code></td><td>An array with a length limit or an exact length.</td></tr>
+<tr><td><code>{ [K]: V }</code></td><td>A map from <code>K</code> to <code>V</code>. Keys cannot be optional.</td></tr>
+<tr><td><code>{ a: T, b: U }</code></td><td>A struct with named fields. In a declaration you can also write it as a Lua table: <code>Data = { a = "T", b = "U" }</code>.</td></tr>
+<tr><td><code>T?</code></td><td>Optional: <code>T</code> or <code>nil</code>. The "present" flag is a single bit.</td></tr>
+<tr><td><code>(T)</code></td><td>Grouping, for example <code>(u8[])?</code>.</td></tr>
+</tbody></table></div>
+<p>Clients can send arrays and maps up to <b>Settings → Network → Max client array</b> entries (16,384 by default). Lengths are checked against the packet's size before anything is allocated.</p>
+
+<h2>Names</h2>
+<p>Service, event and field names must be plain identifiers (<code>[A-Za-z_][A-Za-z0-9_]*</code>) and cannot be Luau keywords such as <code>end</code> or <code>local</code>. They become code, so the compiler refuses them instead of generating a module that cannot load.</p>
+
+<h2>Examples</h2>
+<pre><code>Data = "u8"                                          -- one number
+Data = { "Instance(Player)", "f32(0..100, 0.5)" }   -- two arguments
+Data = { pos = "vector(f16)", state = "enum(Idle, Walk, Run)", target = "Instance(Model)?" }
+Data = "{ [string]: u32 }"                           -- a map
+Data = "{ id: u16, count: u8 }[..50]"                -- up to 50 structs
+Return = "boolean"                                   -- a function's answer</code></pre>
+</main>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>
