@@ -35,7 +35,7 @@
   <li><strong>Change the start calls</strong> to <code>Branch:Start(...)</code> on the server and the client.</li>
   <li><strong>Check your segment names.</strong> With the default <code>"Suffix"</code> rule, services must end in <code>Service</code> and controllers in <code>Controller</code>. Branch Studio warns about modules that have <code>Init</code> or <code>Start</code> but no suffix. If you would rather keep your folder layout, pick the <code>"Folders"</code> rule.</li>
   <li><strong>Fix utility requires</strong>: <code>require(Packages.Branch.Util.Timer)</code> and so on.</li>
-  <li><strong>Move player data to <code>Branch.Data.Server.Start</code>.</strong> Use the same ProfileStore name as before in <code>Store</code>, so existing saves load unchanged. Then remove the old DataService copies.</li>
+  <li><strong>Move player data to <code>Branch.Data.Server.Start</code>.</strong> Keep the store your saves are in: Branch 1's DataService used the store <code>"Public"</code> unless you passed another <code>profileStoreIndex</code>, while <code>Branch.Data</code> defaults to <code>"PlayerData"</code>. So pass <code>Store = "Public"</code> (or your old name), or every player starts from scratch. The key prefix, <code>"PLAYER_"</code>, is the same. Then remove the old DataService copies.</li>
   <li><strong>Press Play.</strong> <code>Branch:GetReport()</code> shows every segment and its status.</li>
 </ol>
 

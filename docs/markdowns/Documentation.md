@@ -136,6 +136,7 @@ return CombatService
 -- server
 local Net = Branch.Network.Server.CombatService
 Net.Damage.Fire(player, 25, true)       -- also FireAll / FireList / FireExcept / FireNear(position, radius, ...)
+Net.Mob.FireFrom(position, mob)         -- events with Lod: each player at the rate of their distance
 Net.Buy.On(function(player, item) return true end)
 
 -- client
@@ -162,13 +163,18 @@ local ok = Net.Buy.Invoke("sword")
 
 | Option | What it does |
 |---|---|
-| `Latest = true` | Several sends to the same recipient in one frame send only the newest. Latest values go out at the end of the frame. Not for functions. |
+| `Latest = true` | Several sends to the same recipient in one frame send only the newest (per `Key`, with `Delta`). Latest values go out at the end of the frame. Not for functions. |
+| `Hz = 20` | The newest value goes out at most this many times a second (up to 60); the last one is never lost. Includes `Latest`. |
+| `Lod = { { 50, 30 }, { 200, 5 } }` | Distance rings, near to far: `FireFrom(position, ...)` sends each player at the rate of the ring their character is in, and nothing beyond the last ring. Server to client only. |
 | `Delta = true` | A struct travels in full once, then only the fields that changed since the last send to that recipient; a changed boolean costs no bytes. Reliable events only. Listeners always get the full struct. |
 | `Key = "id"` | With `Delta`: the field that tells objects apart, so one event carries many objects, each with its own state. `Event.Forget(key)` drops a key's state on both sides. |
+| `Threshold = { pos = 0.05 }` | With `Delta`: a number or vector that moved less than this counts as unchanged. One number applies to every number and vector field. Small moves add up, so the receiver is never further off than the threshold. |
+| `Pack = true` | Booleans, enums, stepped numbers, whole numbers with a range and bounded lengths are written as bits instead of whole bytes (a `u8(0..100)` is 7 bits). Not with `Delta`, not on functions. |
 | `Rate = "10/s"` | On `From = "Client"` events and functions: sends over the limit are dropped (functions answer "failed"), and `OnReject` hears about it with a reason starting `rate limit:`. |
 
 ```lua
-Unit   = { From = "Server", Latest = true, Delta = true, Key = "id", Data = { id = "u16", pos = "vector", hp = "u8" } },
+Mob    = { From = "Server", Delta = true, Key = "id", Threshold = 0.05, Lod = { { 50, 30 }, { 200, 5 } }, Data = { id = "u16", pos = "vector", hp = "u8" } },
+Bag    = { From = "Server", Pack = true, Data = "{ id: u16(0..1000), count: u8(0..99) }[]" },
 Attack = { From = "Client", Rate = "10/s", Data = { dir = "vector" } },
 ```
 
@@ -176,6 +182,7 @@ Attack = { From = "Client", Rate = "10/s", Data = { dir = "vector" } },
 
 **See the traffic.** While you Play in Studio, Branch Studio opens a live network profiler: sends and bytes per second for every event, its share of the traffic, and hints for numbers that could use a smaller type. The counters only run in Studio.
 
+**Apply the hints in one click.** Press **Profile** on Branch Studio's Network page, play, then press **Finish** in the profiler window. The hints appear under Problems on the Overview page; clicking one changes that type in your declaration (one undo step). Profile is needed because Play runs in a copy of the place, and only a session started this way can hand data back to the place you edit.
 
 ---
 
@@ -189,7 +196,7 @@ Attack = { From = "Client", Rate = "10/s", Data = { dir = "vector" } },
 | a separate `Packages.DataService` | `Packages.Branch.Data` (`Branch.Data.Server` / `.Client`) |
 | `-- BRANCH_EXPORTS` block | `-- BRANCH_GENERATED` block (managed by Branch Studio) |
 
-Branch Studio does not touch a Branch 1 runtime until you press **Update**. Existing ProfileStore saves load unchanged as long as `Data.Start` uses the same `Store` name.
+Branch Studio does not touch a Branch 1 runtime until you press **Update**. Existing ProfileStore saves load unchanged as long as `Data.Start` uses the same `Store` name. Branch 1's DataService used `"Public"` unless you passed another `profileStoreIndex`, and `Branch.Data` defaults to `"PlayerData"`, so pass `Store = "Public"` (or your old name). The key prefix, `"PLAYER_"`, is the same.
 
 ---
 

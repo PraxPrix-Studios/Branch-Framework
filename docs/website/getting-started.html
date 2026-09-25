@@ -96,27 +96,41 @@ function PlayerService:Init()
 end
 
 return PlayerService</code></pre>
-<p>Then turn on <b>Compiled networking</b> in Branch Studio's Overview and declare events on any service:</p>
-<pre><code>GreetService.Network = {
-	Wave = { From = "Client" },                    -- no data
-	Waved = { From = "Server", Data = "string" },  -- one string
-}</code></pre>
-<pre><code>-- server
-Branch.Network.Server.GreetService.Wave.On(function(player)
-	Branch.Network.Server.GreetService.Waved.FireAll(player.Name)
-end)
+<p>Then turn on <b>Compiled networking</b> on Branch Studio's Overview page, and declare events in a service's <code>Network</code> table. Here is <code>GreetService</code> again, with a wave players can send:</p>
+<pre><code>local Branch = require(game.ReplicatedStorage.Packages.Branch)
 
--- client
-Branch.Network.Client.GreetService.Waved.On(function(name)
-	print(name, "waved")
-end)
-Branch.Network.Client.GreetService.Wave.Fire()</code></pre>
+local GreetService = {}
+
+GreetService.Network = {
+	Wave = { From = "Client" },                    -- a client sends it, no data
+	Waved = { From = "Server", Data = "string" },  -- the server sends it, one string
+}
+
+function GreetService:Start()
+	local Net = Branch.Network.Server.GreetService
+	Net.Wave.On(function(player)
+		Net.Waved.FireAll(player.Name)
+	end)
+end
+
+return GreetService</code></pre>
+<p>When you stop typing, Branch Studio compiles the events, so autocomplete knows them. On the client, in <code>CameraController</code> or any controller:</p>
+<pre><code>function CameraController:Start()
+	local Net = Branch.Network.Client.GreetService
+	Net.Waved.On(function(name)
+		print(name, "waved")
+	end)
+	Net.Wave.Fire()
+end</code></pre>
+<p>(Add <code>local Branch = require(game.ReplicatedStorage.Packages.Branch)</code> at the top of the controller too.)</p>
 
 <h2>Where next</h2>
 <ul>
   <li><a href="guide/segments.html">Segments</a>: the lifecycle, dependencies, hooks and what happens on errors.</li>
   <li><a href="guide/data.html">Player data</a>: templates, migrations, leaderstats and observers.</li>
-  <li><a href="guide/network.html">Networking</a>: events, functions, types and guarantees.</li>
+  <li><a href="guide/network.html">Networking</a>: events, functions, types, sending less and guarantees.</li>
+  <li><a href="guide/studio.html">Branch Studio</a>: what the plugin does for you, page by page.</li>
+  <li><a href="guide/features.html">Using the features</a>: every feature, step by step.</li>
   <li><a href="api/branch.html">API reference</a>: every function, with its signature.</li>
 </ul>
 </main>

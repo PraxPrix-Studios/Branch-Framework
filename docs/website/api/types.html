@@ -41,6 +41,20 @@
 "f32(-180..180, 0.5)"    -- 721 steps: 2 bytes instead of 4</code></pre>
 <p>Out-of-range values error at the caller when argument checks are on, and are clamped to the range when they are off. The server rejects any step index past the end of the range.</p>
 
+<h3 id="pack">Sizes with Pack</h3>
+<p>On an event with <a href="../guide/network.html#pack"><code>Pack = true</code></a>, these take only the bits their range needs instead of whole bytes:</p>
+<div class="tbl"><table>
+<thead><tr><th>Type</th><th>Bits</th></tr></thead>
+<tbody>
+<tr><td><code>boolean</code>, an optional's "is it here" flag</td><td>1</td></tr>
+<tr><td><code>enum(A, B, C)</code></td><td>enough for the count: 3 values → 2 bits</td></tr>
+<tr><td>whole number with a range: <code>u8(0..100)</code>, <code>u32(0..5000)</code></td><td>enough for the range: 0..100 → 7 bits, 0..5000 → 13</td></tr>
+<tr><td><code>u8</code> / <code>i8</code> / <code>u16</code> / <code>i16</code></td><td>8 / 8 / 16 / 16 (no change, but no padding either)</td></tr>
+<tr><td>stepped number</td><td>enough for the steps: 101 steps → 7 bits</td></tr>
+<tr><td>length of <code>T[..n]</code> or <code>{ [K]: V }</code> with a maximum</td><td>enough for <code>n</code>: <code>[..64]</code> → 7 bits</td></tr>
+<tr><td>everything else</td><td>the same bytes as without Pack</td></tr>
+</tbody></table></div>
+
 <h2>Values</h2>
 <div class="tbl"><table>
 <thead><tr><th>Type</th><th>Carries</th><th>Notes</th></tr></thead>

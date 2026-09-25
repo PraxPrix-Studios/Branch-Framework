@@ -58,7 +58,7 @@ return ShopService</code></pre></li>
   <li>Send normal numbers: <code>Net.Aim.Fire({ pitch = 12.3, charge = 0.5 })</code>. The receiver gets the value rounded to the nearest step (<code>12.5</code>).</li>
 </ol>
 <ul>
-  <li><strong>Size.</strong> Up to 256 steps take 1 byte, up to 65,536 take 2, more take 4.</li>
+  <li><strong>Size.</strong> Up to 256 steps take 1 byte, up to 65,536 take 2, more take 4. With <a href="#pack">Pack</a>, exactly the bits needed: 101 steps take 7 bits.</li>
   <li><strong>Pick the coarsest step you can live with.</strong> The profiler (<a href="#hints">smaller-type hints</a>) tells you the real range of your values.</li>
   <li><strong>Out of range.</strong> A client value outside <code>min..max</code> is rejected on the server and reported to <a href="#onreject">OnReject</a>.</li>
 </ul>
@@ -98,10 +98,49 @@ Net.Position.Fire(player, knockbackTarget)   -- only this one is sent</code></pr
 </ol>
 <ul>
   <li><strong>"Newest" is per player.</strong> A <code>FireAll</code> replaces earlier single sends of that frame; a <code>Fire</code> to one player after a <code>FireAll</code> also reaches that player.</li>
+  <li><strong>And per object.</strong> On a <a href="#delta">Delta</a> event with a <code>Key</code>, every key keeps its own newest value: fire 50 units in a frame and all 50 arrive.</li>
+  <li><strong>Reuse your table.</strong> A struct you pass is copied, so you may fill the same table again for the next object.</li>
   <li><strong>Sent at the end of the frame</strong>, after the frame's other events. Don't use it for an event whose order relative to other events matters.</li>
   <li><strong>Works both ways</strong> (server → client and client → server), but not on functions: every call needs its own answer.</li>
 </ul>
 <p class="check"><b>Check:</b> in the live profiler (Play in Studio), the event's sends per second stop growing past your frame rate.</p>
+
+<h3 id="hz">Hz</h3>
+<p>Plenty of events are fired every frame (a stamina bar, an aim direction, a boss's health) but nobody needs them 60 times a second. <code>Hz</code> sends the newest value a fixed number of times a second.</p>
+<ol class="steps">
+  <li>Add <code>Hz</code> with the sends per second you want (up to 60):
+<pre><code>Stamina = { From = "Server", Hz = 10, Data = "u8" },
+Aim     = { From = "Client", Hz = 20, Type = "Unreliable", Data = "vector" },</code></pre></li>
+  <li>Keep firing it as before, even every frame. Nothing else changes: <code>Hz</code> includes <code>Latest</code>, so only the newest value is kept between sends.</li>
+</ol>
+<ul>
+  <li><strong>The last value always arrives.</strong> If you stop firing, the newest value still goes out at the next send.</li>
+  <li><strong>No delay after a pause.</strong> When the event was quiet, a new value goes out at once.</li>
+  <li><strong>How to pick the number:</strong> 10 is plenty for bars and counters, 20-30 for things that move. Fractions work: <code>Hz = 0.5</code> is once every two seconds.</li>
+</ul>
+<p class="check"><b>Check:</b> the live profiler shows the event at about that many sends a second.</p>
+
+<h3 id="lod">Lod</h3>
+<p>Things in the world (mobs, cars, other players' effects) should update smoothly for players next to them, and only now and then for players far away. <code>Lod</code> sets how often, by distance.</p>
+<ol class="steps">
+  <li>Add <code>Lod</code>: a list of <code>{ studs, sends per second }</code> rings, near to far:
+<pre><code>Mob = { From = "Server", Delta = true, Key = "id", Lod = { { 50, 30 }, { 200, 5 } }, Data = { id = "u16", pos = "vector", hp = "u8" } },</code></pre>
+  Here: within 50 studs, 30 times a second; within 200 studs, 5 times a second; further away, not at all.</li>
+  <li>Send with <code>FireFrom</code>, from where the thing is:
+<pre><code>RunService.Heartbeat:Connect(function()
+	for id, mob in mobs do
+		Net.Mob.FireFrom(mob.Position, { id = id, pos = mob.Position, hp = mob.Hp })
+	end
+end)</code></pre></li>
+  <li>The client listens as usual. A far player sees the mob jump to where it is now when their ring's turn comes.</li>
+</ol>
+<ul>
+  <li><strong>Distance</strong> is from <code>position</code> to each player's <code>Character.PrimaryPart</code>. Players without a character get nothing from <code>FireFrom</code>.</li>
+  <li><strong>Combine it</strong> with <a href="#delta">Delta</a> and a <code>Key</code> (only changed fields, one state per mob), as above: this is the cheapest way to replicate many moving things.</li>
+  <li><strong>Other sends ignore distance.</strong> <code>Fire</code>, <code>FireAll</code> and the rest still work on a Lod event.</li>
+  <li><strong>Server → client only.</strong></li>
+</ul>
+<p class="check"><b>Check:</b> with two test players (<b>Test → Clients and Servers</b>), walk one far away: its listener is called less and less often, then stops.</p>
 
 <h3 id="delta">Delta</h3>
 <p>The first send carries the whole struct. After that, only the fields that changed since the last send to that player travel. A character standing still costs almost nothing.</p>
@@ -148,6 +187,20 @@ end)</code></pre>
 -- opening a door sends: id + one mask byte. The "open" value itself costs 0 bytes.</code></pre>
 <p>This is a good reason to turn flags like <code>open</code>, <code>stunned</code> or <code>visible</code> into booleans in a Delta event, instead of sending separate events for them.</p>
 
+<h3 id="threshold">Threshold</h3>
+<p>Physics moves positions by tiny amounts every frame, so a <a href="#delta">Delta</a> event keeps sending them. A <code>Threshold</code> says how far a number or vector may move and still count as unchanged.</p>
+<ol class="steps">
+  <li>Your event must have <code>Delta = true</code>. Add <code>Threshold</code>, per field or one number for every number and vector field:
+<pre><code>Unit = { From = "Server", Delta = true, Threshold = { pos = 0.05, hp = 1 }, Data = { pos = "vector", hp = "f32", name = "string" } },
+Bar  = { From = "Server", Delta = true, Threshold = 0.5, Data = { x = "f32", y = "f32" } },</code></pre></li>
+  <li>Fire as usual. Moves smaller than the threshold are not sent; the client keeps the value it has.</li>
+</ol>
+<ul>
+  <li><strong>Small moves add up.</strong> Branch compares with what the client has, not with the last frame: ten moves of 0.01 are sent once together they pass 0.05. The client is never further off than the threshold.</li>
+  <li><strong>How to pick it:</strong> the smallest change a player could notice. 0.05 studs for positions, 1 for a health bar of 100.</li>
+  <li><strong>Exactly the threshold</strong> still counts as unchanged: with <code>Threshold = 1</code>, 5 &rarr; 6 is not sent, 5 &rarr; 7 is.</li>
+</ul>
+
 <h3 id="near">FireNear</h3>
 <p>Send only to players whose character is within a radius: explosions, footsteps, local sounds, hit effects.</p>
 <ol class="steps">
@@ -162,6 +215,22 @@ Net.Explosion.FireNear(position, 150, position, damage)</code></pre></li>
   <li><strong>With Latest and Delta</strong> it works like <code>FireList</code>: each nearby player is handled separately.</li>
 </ul>
 <p class="check"><b>Check:</b> with two test players far apart (<b>Test → Clients and Servers</b>), only the near one receives the event.</p>
+
+<h3 id="pack">Pack</h3>
+<p>Normally every value takes whole bytes, even a number from 0 to 9 that needs 4 bits. With <code>Pack</code>, small values are written as bits, one after another. It pays off on lists of small numbers: inventories, grids, stats.</p>
+<ol class="steps">
+  <li>Declare the real range of your numbers (the narrower, the smaller) and add <code>Pack = true</code>:
+<pre><code>Bag  = { From = "Server", Pack = true, Data = "{ id: u16(0..1000), count: u8(0..99), rarity: enum(Common, Rare, Epic), fav: boolean }[]" },
+Grid = { From = "Server", Pack = true, Data = "u8(0..9)[..1024]" },</code></pre></li>
+  <li>Fire and listen as usual.</li>
+</ol>
+<ul>
+  <li><strong>What shrinks:</strong> booleans, <code>enum(...)</code>, stepped numbers, whole numbers with a range, <code>u8</code> / <code>i8</code> / <code>u16</code> / <code>i16</code>, optional flags, and lengths of arrays with a maximum. One <code>Bag</code> item above is 20 bits instead of 40.</li>
+  <li><strong>What doesn't:</strong> floats without a step, vectors, CFrames, strings. They still work, as bytes.</li>
+  <li><strong>Not the default</strong> because writing bits costs a little more time than writing bytes; use it where the bytes matter.</li>
+  <li>Not with <code>Delta</code>, and not on functions.</li>
+</ul>
+<p class="check"><b>Check:</b> the plugin's <b>Network</b> page shows the event's smaller size, and the live profiler its bytes per second.</p>
 
 <!-- ───────────────────────── Security ───────────────────────── -->
 <h2 id="security">Security</h2>
@@ -222,22 +291,27 @@ end)</code></pre>
 <ol class="steps">
   <li>Press <b>Play</b> in Studio. The <b>Branch Network (live)</b> window opens.</li>
   <li>Play the game normally. Every second the window updates each event, in both directions: sends per second, bytes per second, and share of the total, busiest first.</li>
-  <li>Start with the top rows: those events are where savings matter. Typical fixes: <a href="#latest">Latest</a> for events sent several times a frame, <a href="#delta">Delta</a> for state that rarely changes, <a href="#near">FireNear</a> for local effects, <a href="#stepped">stepped numbers</a> for precise numbers.</li>
+  <li>Start with the top rows: those events are where savings matter. Typical fixes: <a href="#latest">Latest</a> or <a href="#hz">Hz</a> for events sent every frame, <a href="#lod">Lod</a> for things in the world, <a href="#delta">Delta</a> for state that rarely changes, <a href="#near">FireNear</a> for local effects, <a href="#pack">Pack</a> for lists of small numbers.</li>
 </ol>
 <ul>
   <li><strong>Zero cost in live games.</strong> The counters only run in Studio.</li>
   <li><strong>Turn it off</strong> in <b>Settings → Editor → Live network profiler</b>.</li>
 </ul>
 
-<h3 id="hints">Smaller-type hints</h3>
-<p>Under the traffic table, the profiler lists numbers that could travel smaller, based on the values your game really sent:</p>
-<pre><code>Combat.Hit.damage is always a whole number from 0 to 200: declare it as u8 instead of u32 to save 3 B per value.</code></pre>
+<h3 id="hints">Smaller types in one click</h3>
+<p>The profiler watches the numbers your game really sends and finds the ones declared bigger than they need to be.</p>
 <ol class="steps">
-  <li>Play long enough to see the real range (fight, buy, die: whatever the event covers).</li>
-  <li>Change the type in the declaration to the suggested one, leaving some headroom if the values can grow later.</li>
-  <li>Play again: the hint disappears, and the event's bytes per second drop.</li>
+  <li>Open the <b>Network</b> page of Branch Studio and press <b>Profile</b>. Play starts.</li>
+  <li>Play long enough to see real values: fight, buy, die, whatever your events cover. The <b>Smaller types</b> list in the profiler window fills up:
+<pre><code>Combat.Hit.damage is always a whole number from 0 to 200: declare it as u8 instead of u32 to save 3 B per value.</code></pre></li>
+  <li>Press <b>Finish</b> in the profiler window. Play stops, and the hints appear on the <b>Overview</b> page under <b>Problems</b>.</li>
+  <li>Click a hint: the type in your declaration changes (Ctrl+Z undoes it) and the network compiles again. Leave hints you disagree with; they stay until you apply them.</li>
 </ol>
-<p>Hints cover whole numbers in bigger types, <code>f64</code> that fits in <code>f32</code>, and numbers that would fit a <a href="#stepped">stepped</a> type.</p>
+<ul>
+  <li><strong>Think before you click.</strong> A hint is based on what you saw while playing. If a value can grow later (a level cap, a currency), pick a type with room, or leave it.</li>
+  <li>Hints cover whole numbers in bigger types, <code>f64</code> that fits in <code>f32</code>, and floats that would fit a <a href="#stepped">stepped</a> type.</li>
+  <li>With the normal <b>Play</b> button the hints are shown in the window only: Studio cannot pass them from Play back to the place you edit. <b>Profile</b> can.</li>
+</ul>
 
 <h3 id="rename">Smart rename</h3>
 <p>Rename a module in the Explorer as usual. Branch Studio carries the new name through your code in one undo step: the module's table name, <code>GetSegment("Old")</code>, <code>Dependencies</code>, and paths like <code>script.Parent.Old</code> or <code>:WaitForChild("Old")</code> that really lead to it. Anything it could not update safely (a path through a variable, a chain split across lines) is listed in the <b>Log</b>: click each entry and fix it by hand.</p>

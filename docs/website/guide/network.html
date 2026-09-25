@@ -47,8 +47,12 @@ return CombatService</code></pre>
 <tr><td><code>Return</code></td><td>What a function returns. Its presence makes the entry a function.</td><td>None</td></tr>
 <tr><td><code>Unpack</code></td><td><code>true</code>: a struct travels as separate arguments instead of a table, and no table is built on either side.</td><td><code>false</code></td></tr>
 <tr><td><code>Latest</code></td><td><code>true</code>: several sends to the same recipient in one frame send only the last one. See <a href="#latest">Latest</a>.</td><td><code>false</code></td></tr>
+<tr><td><code>Hz</code></td><td>A number up to 60: the newest value goes out at most this many times a second. See <a href="#hz">Hz</a>.</td><td>every frame</td></tr>
+<tr><td><code>Lod</code></td><td>Distance rings, near to far: <code>{ { 50, 30 }, { 200, 5 } }</code>. Adds <code>FireFrom(position, ...)</code>. See <a href="#lod">Lod</a>.</td><td>none</td></tr>
 <tr><td><code>Delta</code></td><td><code>true</code>: only the struct fields that changed since the last send travel. See <a href="#delta">Delta</a>.</td><td><code>false</code></td></tr>
 <tr><td><code>Key</code></td><td>With <code>Delta</code>: the field that tells objects apart, such as <code>"id"</code>.</td><td>none</td></tr>
+<tr><td><code>Threshold</code></td><td>With <code>Delta</code>: how far a number or vector may move and still count as unchanged. One number, or per field: <code>{ pos = 0.1 }</code>. See <a href="#threshold">Threshold</a>.</td><td>none</td></tr>
+<tr><td><code>Pack</code></td><td><code>true</code>: small numbers, enums and booleans share a bit stream instead of taking a byte each. See <a href="#pack">Pack</a>.</td><td><code>false</code></td></tr>
 <tr><td><code>Rate</code></td><td><code>"15/s"</code> or <code>"600/m"</code>: how many a client may send. See <a href="#rate">Rate</a>.</td><td>no limit</td></tr>
 </tbody></table></div>
 <p>A typo in an option name is a compile error that suggests the right one: <code>Tpye</code> gives <em>did you mean "Type"?</em></p>
@@ -66,13 +70,54 @@ return CombatService</code></pre>
 <p>Every type you can use, from <code>u8</code> to <code>{ [K]: V }</code>, is listed in <a href="../api/types.html">Network types</a>.</p>
 
 <h2 id="savers">Send less</h2>
+<p>Every option below is a word in the declaration: your <code>Fire</code> and <code>On</code> calls stay the same. They can be combined.</p>
+<div class="tbl"><table>
+<thead><tr><th>If you send...</th><th>Use</th><th>What it saves</th></tr></thead>
+<tbody>
+<tr><td>the same state several times a frame (from different systems)</td><td><a href="#latest"><code>Latest</code></a></td><td>all but the newest send</td></tr>
+<tr><td>state every frame that nobody needs 60 times a second (positions, bars)</td><td><a href="#hz"><code>Hz</code></a></td><td>2 of 3 sends at <code>Hz = 20</code></td></tr>
+<tr><td>things in the world that only nearby players need often</td><td><a href="#lod"><code>Lod</code></a> + <code>FireFrom</code></td><td>most sends to far players</td></tr>
+<tr><td>effects that only nearby players see at all</td><td><a href="#near"><code>FireNear</code></a></td><td>every send to far players</td></tr>
+<tr><td>a struct whose fields rarely all change</td><td><a href="#delta"><code>Delta</code></a> (+ <code>Key</code> for many objects)</td><td>the fields that did not change</td></tr>
+<tr><td>positions that jitter by tiny amounts</td><td><a href="#threshold"><code>Threshold</code></a> (with <code>Delta</code>)</td><td>moves too small to matter</td></tr>
+<tr><td>lists of small numbers: inventories, grids, stats</td><td><a href="#pack"><code>Pack</code></a></td><td>30-50% of those bytes</td></tr>
+<tr><td>numbers in a bigger type than they need</td><td><a href="#see">Profile</a> in Branch Studio</td><td>1-7 bytes per number</td></tr>
+</tbody></table></div>
+
 <h3 id="latest">Latest: only the newest value</h3>
-<p>For state that is sent often — a position, health, an animation — only the newest value matters. With <code>Latest = true</code>, if you fire the same event to a player three times in one frame, only the third one is sent; the two older ones are dropped before they cost anything.</p>
+<p>For state that is sent often (a position, health, an animation), only the newest value matters. With <code>Latest = true</code>, if you fire the same event to a player three times in one frame, only the third one is sent; the two older ones are dropped before they cost anything.</p>
 <pre><code>Position = { From = "Server", Type = "Unreliable", Latest = true, Data = { id = "u16", pos = "vector" } },</code></pre>
 <ul>
-  <li><strong>Per recipient.</strong> "Last" means per player. After <code>FireAll</code>, a newer <code>Fire</code> to one player also reaches that player; a <code>FireAll</code> after single <code>Fire</code>s replaces them.</li>
+  <li><strong>Per recipient.</strong> "Newest" means per player. After <code>FireAll</code>, a newer <code>Fire</code> to one player also reaches that player; a <code>FireAll</code> after single <code>Fire</code>s replaces them.</li>
+  <li><strong>Per key.</strong> With <a href="#delta"><code>Delta</code></a> and a <code>Key</code>, "newest" is per object: fire 50 units in one frame and all 50 arrive, each with its newest value.</li>
   <li><strong>End of the frame.</strong> Latest events are written when the frame ships, so they arrive after the frame's other events.</li>
-  <li><strong>Not for functions.</strong> Every function call needs its own answer, so <code>Latest</code> only works on events.</li>
+  <li><strong>Reuse your table.</strong> A struct you pass is copied, so you may change the same table and fire it again for the next object.</li>
+  <li><strong>Not for functions.</strong> Every function call needs its own answer, so <code>Latest</code> only works on events. It works in both directions.</li>
+</ul>
+
+<h3 id="hz">Hz: a fixed number of sends a second</h3>
+<p>Many things are fired every frame but nobody needs them 60 times a second. <code>Hz = 20</code> keeps the newest value and sends it 20 times a second: a third of the traffic, with no change to your code.</p>
+<pre><code>Stamina = { From = "Server", Hz = 10, Data = "u8" },
+Aim     = { From = "Client", Hz = 20, Type = "Unreliable", Data = "vector" },</code></pre>
+<ul>
+  <li><strong>Includes Latest.</strong> Between sends, only the newest value is kept, and it is the one that goes out.</li>
+  <li><strong>Nothing is lost.</strong> The last value you fired always arrives, at the next send.</li>
+  <li><strong>No wait after a pause.</strong> When the event has been quiet, a new value goes out at once.</li>
+  <li><strong>Any number up to 60</strong>, fractions included: <code>Hz = 0.5</code> is once every two seconds.</li>
+</ul>
+
+<h3 id="lod">Lod: often near, rarely far</h3>
+<p>A monster next to you should move smoothly; one 300 studs away can update a few times a second. <code>Lod</code> sets that per distance, and <code>FireFrom(position, ...)</code> sends to every player at the rate of the ring their character is in.</p>
+<pre><code>Mob = { From = "Server", Delta = true, Key = "id", Lod = { { 50, 30 }, { 200, 5 } }, Data = { id = "u16", pos = "vector", hp = "u8" } },</code></pre>
+<pre><code>-- in Heartbeat: every mob, from its own position
+for id, mob in mobs do
+	Net.Mob.FireFrom(mob.Position, { id = id, pos = mob.Position, hp = mob.Hp })
+end</code></pre>
+<ul>
+  <li><strong>Rings, near to far.</strong> <code>{ 50, 30 }</code> means "within 50 studs, 30 times a second". Players beyond the last ring, or without a character, get nothing from <code>FireFrom</code>.</li>
+  <li><strong>Newest value per player.</strong> When a player's ring allows a send, they get the newest value, so a far player sees the mob jump to where it is now.</li>
+  <li><strong>The other sends still work.</strong> <code>Fire</code>, <code>FireAll</code> and the rest ignore distance (and use <code>Hz</code>, if the event has it).</li>
+  <li><strong>Server → client only:</strong> the server knows where everyone is.</li>
 </ul>
 
 <h3 id="delta">Delta: only what changed</h3>
@@ -81,16 +126,39 @@ return CombatService</code></pre>
 <ul>
   <li><strong><code>Key</code></strong> names the field that tells objects apart. Each key has its own state, so one event can carry many units. Without <code>Key</code>, there is one state per recipient.</li>
   <li><strong>Listeners always get the full struct.</strong> The receiver fills in the unchanged fields itself, so your code never sees a partial value.</li>
-  <li><strong><code>Forget(key)</code></strong> drops the state kept for a key — call it when the object is gone, so neither side keeps it in memory. The next send for that key goes out in full. Without <code>Key</code>, <code>Forget()</code> makes the next send to every player full.</li>
+  <li><strong><code>Forget(key)</code></strong> drops the state kept for a key: call it when the object is gone, so neither side keeps it in memory. The next send for that key goes out in full. Without <code>Key</code>, <code>Forget()</code> makes the next send to every player full.</li>
   <li><strong>Reliable only.</strong> A lost unreliable packet would leave the receiver with the wrong state, so the compiler refuses <code>Delta</code> on <code>Unreliable</code> events.</li>
   <li><strong>Tables inside the struct</strong> (arrays, maps, nested structs) are sent whenever the struct is sent: comparing them would cost more than it saves.</li>
   <li><strong><code>FireAll</code></strong> on a Delta event writes to each player separately, because every player can hold a different state (someone who just joined gets the full struct).</li>
 </ul>
-<p><code>Latest</code> and <code>Delta</code> work together: only the frame's newest value is compared and sent.</p>
+<p><code>Delta</code> works with <code>Latest</code>, <code>Hz</code> and <code>Lod</code>: only the newest value is compared and sent.</p>
+
+<h3 id="threshold">Threshold: ignore tiny moves</h3>
+<p>Physics makes positions jitter by fractions of a stud, and <code>Delta</code> would send every jitter. With a <code>Threshold</code>, a number or vector that moved less than that still counts as unchanged.</p>
+<pre><code>Unit = { From = "Server", Delta = true, Threshold = { pos = 0.05, hp = 1 }, Data = { pos = "vector", hp = "f32", name = "string" } },
+Bar  = { From = "Server", Delta = true, Threshold = 0.5, Data = { x = "f32", y = "f32" } },   -- every number field</code></pre>
+<ul>
+  <li><strong>Small moves add up.</strong> The comparison is with what the receiver has, not with the last frame, so many small moves are sent as soon as together they pass the threshold. The receiver is never further off than the threshold.</li>
+  <li><strong>What it covers.</strong> Number and vector fields (optional ones too). A vector counts as moved when any of its three components moved further than the threshold. <code>NaN</code> always counts as a change.</li>
+  <li><strong>Exactly the threshold</strong> still counts as unchanged: with <code>Threshold = 1</code>, 5 → 6 is not sent, 5 → 7 is.</li>
+</ul>
 
 <h3 id="near">FireNear: only players nearby</h3>
 <pre><code>Net.Explosion.FireNear(position, 150, damage)   -- players whose character is within 150 studs</code></pre>
-<p>Every server → client event has <code>FireNear(position, radius, ...)</code>. It checks each player's <code>Character.PrimaryPart</code>; players without a character are skipped. In a big map, the savings grow with the number of players.</p>
+<p>Every server → client event has <code>FireNear(position, radius, ...)</code>. It checks each player's <code>Character.PrimaryPart</code>; players without a character are skipped. In a big map, the savings grow with the number of players. For things that far players should still see, now and then, use <a href="#lod"><code>Lod</code></a> instead.</p>
+
+<h3 id="pack">Pack: small values as bits</h3>
+<p>Normally every value takes whole bytes: a number from 0 to 100 takes 1 byte (8 bits) though it needs 7. With <code>Pack = true</code>, small values are written as bits, one after another.</p>
+<pre><code>Bag = { From = "Server", Pack = true, Data = "{ id: u16(0..1000), count: u8(0..99), rarity: enum(Common, Rare, Epic), fav: boolean }[]" },</code></pre>
+<p>Each item above takes 10 + 7 + 2 + 1 = 20 bits instead of 5 bytes (40 bits): 200 items go from 1,000 bytes to about 500.</p>
+<ul>
+  <li><strong>What shrinks:</strong> booleans, <code>enum(...)</code>, stepped numbers, whole numbers with a range (<code>u8(0..100)</code>, <code>u32(0..5000)</code>), <code>u8</code> / <code>i8</code> / <code>u16</code> / <code>i16</code>, optional flags, and lengths of arrays with a maximum (<code>u8[..64]</code>).</li>
+  <li><strong>The narrower the range, the smaller:</strong> <code>u8(0..9)</code> is 4 bits, <code>u8(0..1)</code> is 1. Declare the real range of your values.</li>
+  <li><strong>Everything else still works</strong> (floats, vectors, strings, Instances): they are written as bytes, after the bits before them.</li>
+  <li><strong>When to use it:</strong> inventories, maps, grids, stats: lists of small numbers. It saves nothing on floats and vectors, and writing bits costs a little more time than writing bytes, so it is not the default.</li>
+  <li>Not with <code>Delta</code> (Delta already sends only what changed), and not on functions.</li>
+</ul>
+<p>The server still checks every packed value against its declared range: 7 bits can hold 127, but a <code>u8(0..100)</code> above 100 is rejected.</p>
 
 <h2 id="rate">Rate: limit what clients send</h2>
 <p>Validation checks that a packet is correct. <code>Rate</code> also checks how often a player sends it, so an exploiter cannot spam valid events.</p>
@@ -112,6 +180,7 @@ Net.Damage.FireAll(25, true)                      -- everyone
 Net.Damage.FireList({ a, b }, 25, true)           -- a list of players
 Net.Damage.FireExcept(player, 25, true)           -- everyone but one
 Net.Damage.FireNear(position, 100, 25, true)      -- players within 100 studs
+Net.Mob.FireFrom(position, mob)                   -- Lod events: rate by distance
 Net.Hit.On(function(player, hit) end)             -- client -> server event
 Net.Buy.On(function(player, item) return true end) -- a function's handler
 
@@ -133,7 +202,7 @@ local ok = Net.Buy.Invoke("sword")                -- yields for the answer</code
   <li><strong>Batched per frame.</strong> Everything you fire for a player in one frame leaves as one remote call. <code>FireAll</code> goes out once, through <code>FireAllClients</code>.</li>
   <li><strong>Exact order.</strong> Each player receives events in the order they were fired, even when <code>Fire</code>, <code>FireAll</code> and <code>FireList</code> are mixed.</li>
   <li><strong>Compact.</strong>
-    <ul><li>Booleans and optional flags are packed into bits, and short lengths take one byte.</li><li>A repeated event is written without its id; the id goes once for the whole run.</li><li>Stepped numbers such as <code>f32(0..1, 0.01)</code> travel as a small step index.</li></ul>
+    <ul><li>Booleans and optional flags are packed into bits, and short lengths take one byte.</li><li>A repeated event is written without its id; the id goes once for the whole run.</li><li>Stepped numbers such as <code>f32(0..1, 0.01)</code> travel as a small step index.</li><li>With <a href="#pack"><code>Pack</code></a>, small numbers and enums are written as bits too.</li></ul>
   </li>
   <li><strong>Unreliable under the limit.</strong> Unreliable events are batched into packets under a safe budget (820 bytes by default). Roblox drops unreliable packets above about 900 bytes. Unreliable traffic sent during the first seconds of a join can be dropped while Roblox replicates the world, so use Reliable for anything that must arrive.</li>
   <li><strong>Function calls go out at once</strong> and do not wait for the end of the frame.</li>
@@ -151,13 +220,22 @@ end)</code></pre></li>
   <li><strong>Before a listener exists.</strong> Events that arrive before anyone listens are queued (256 by default) and delivered when a listener connects. A function call that finds its queue full is answered with a failure instead of hanging.</li>
 </ul>
 
-<h2>See the traffic</h2>
+<h2 id="see">See the traffic</h2>
 <p>While you Play in Studio, Branch Studio opens a <b>Branch Network (live)</b> window. It shows:</p>
 <ul>
-  <li><strong>Every event, both directions:</strong> how many times it is sent per second, its bytes per second and its share of the traffic, busiest first.</li>
+  <li><strong>Every event, both directions:</strong> how many times it is sent per second, its bytes per second and its share of the traffic, busiest first. The top rows are where the <a href="#savers">Send less</a> options pay off most.</li>
   <li><strong>Smaller types.</strong> Hints such as "<code>hp</code> is always a whole number from 0 to 200: declare it as <code>u8</code> instead of <code>u32</code> to save 3 B per value".</li>
 </ul>
-<p>The counters only run in Studio: in a live server they are switched off. Turn the window off in <b>Settings → Editor → Live network profiler</b>.</p>
+<h3 id="profile">Apply the hints with one click</h3>
+<ol>
+  <li>On the <b>Network</b> page of Branch Studio, press <b>Profile</b>. Play starts as usual.</li>
+  <li>Play the game: fight, buy, die, so every event sends its typical values.</li>
+  <li>In the <b>Branch Network (live)</b> window, press <b>Finish</b>. Play stops and the hints go to Branch Studio.</li>
+  <li>On the <b>Overview</b> page, each hint is listed under <b>Problems</b>. Click one: the type in your declaration is changed (one undo step) and the network is compiled again.</li>
+</ol>
+<p>Hints stay under Problems until you apply them, even after Studio restarts. A hint is refused if the declaration changed since (say, the field was renamed), or if the smaller type cannot hold a range you declared. The Log says why.</p>
+<div class="note"><b>Why a Profile button, and not the normal Play?</b> Play runs in a copy of your place, and a Studio plugin cannot pass data from that copy back to the place you edit. Play started with <b>Profile</b> can: <b>Finish</b> ends it and hands the hints back.</div>
+<p>The counters only run in Studio: in a live server they are switched off. Turn the window off in <b>Settings → Editor → Live network profiler</b> (Profile always shows it).</p>
 
 <h2>Where the code lives</h2>
 <ul>

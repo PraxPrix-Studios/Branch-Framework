@@ -103,6 +103,7 @@ Leaderstats = { coins = "Coins", ["stats.kills"] = "Kills" } -- path = display n
   <li><strong>Failures.</strong> Migrations run on a copy. If one fails, the saved data is left exactly as it was, the error names the migration, and the player is asked to rejoin. Data is never saved half-upgraded.</li>
 </ul>
 <div class="note warn"><b>Only append.</b> Never edit or reorder a migration that already shipped: profiles remember which version they reached.</div>
+<p><b>Branch Studio reminds you.</b> When you point <b>Settings → Paths → Data template</b> at your template, removing a field or changing its type shows a warning under Problems until you confirm the migration is written. New fields need no migration: old saves get them automatically.</p>
 
 <h2>When a player leaves</h2>
 <p>Segments' <code>PlayerRemoving</code> hooks can still read and write the leaving player's data. The profile is released on the next resumption point, after every leave handler has run, and those writes are saved with the session. Write before your hook yields (<code>task.wait</code>, web calls).</p>

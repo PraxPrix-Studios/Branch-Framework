@@ -58,13 +58,18 @@ Branch.Network.OnReject                    -- on the server</code></pre>
 <div class="sig">Server.Service.Event.<b>FireNear</b>(position: Vector3, radius: number, ...args)</div>
 <p>Sends to every player whose <code>Character.PrimaryPart</code> is within <code>radius</code> studs of <code>position</code>. Players without a character are skipped.</p>
 </div>
+<div class="api" id="firefrom">
+<h3>Event.FireFrom <span class="tag">server · Lod only</span></h3>
+<div class="sig">Server.Service.Event.<b>FireFrom</b>(position: Vector3, ...args)</div>
+<p>Sends to every player, as often as the <code>Lod</code> ring their character is in allows: players near <code>position</code> often, far players rarely, players beyond the last ring (or without a character) not at all. Each player gets the newest value when their ring's turn comes. See <a href="../guide/network.html#lod">Lod</a>.</p>
+</div>
 <div class="api" id="forget">
 <h3>Event.Forget <span class="tag">server · client · Delta only</span></h3>
 <div class="sig">Service.Event.<b>Forget</b>(key)      -- Delta with Key
 Service.Event.<b>Forget</b>()         -- Delta without Key</div>
-<p>With a <code>Key</code>: drops the state kept for that key on this side and on every receiver (no listener is called), so the next send for that key is full. Call it when the object is gone. Without a <code>Key</code>: the next send to every recipient is full.</p>
+<p>With a <code>Key</code>: drops the state kept for that key on this side and on every receiver (no listener is called), so the next send for that key is full. A value for that key still waiting to be sent (<code>Latest</code>, <code>Hz</code>, <code>Lod</code>) is dropped too. Call it when the object is gone. Without a <code>Key</code>: the next send to every recipient is full.</p>
 </div>
-<div class="note"><b>Latest and Delta events</b> keep the same functions. With <code>Latest</code>, the values are written when the frame ships; with <code>Delta</code>, <code>FireAll</code>, <code>FireList</code>, <code>FireExcept</code> and <code>FireNear</code> write to each player separately. See <a href="../guide/network.html#savers">Send less</a>.</div>
+<div class="note"><b>Events with send-less options</b> keep the same functions. With <code>Latest</code>, <code>Hz</code> or <code>Lod</code>, the newest values are written when the frame ships (with <code>Hz</code> and <code>Lod</code>, only on frames when their timer allows). With <code>Delta</code>, <code>FireAll</code>, <code>FireList</code>, <code>FireExcept</code> and <code>FireNear</code> write to each player separately. <code>Threshold</code> and <code>Pack</code> change only what travels, not how you call. See <a href="../guide/network.html#savers">Send less</a>.</div>
 <div class="api" id="client-on">
 <h3>Event.On <span class="tag">client</span></h3>
 <div class="sig">Client.Service.Event.<b>On</b>(listener: (...args) -&gt; ()): () -&gt; ()</div>
