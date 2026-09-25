@@ -1,6 +1,7 @@
 -- In-engine benchmark, server half: Branch vs NetRay vs Blink.
--- The client drives the phases through ReplicatedStorage.BenchControl.
--- Results are printed as "BENCH|..." lines.
+-- The client (BenchClient) drives the steps through ReplicatedStorage.BenchControl
+-- and prints everything; this side measures what happens on the server and
+-- sends its numbers back with each "done".
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -9,6 +10,13 @@ local RunService = game:GetService("RunService")
 local Bench = ReplicatedStorage:WaitForChild("Bench")
 local Control = ReplicatedStorage:WaitForChild("BenchControl") :: RemoteEvent
 local Entities = require(ReplicatedStorage:WaitForChild("Entities")) :: any
+
+-- "Run" starts only a server: this benchmark needs a player
+task.delay(5, function()
+	if #Players:GetPlayers() == 0 then
+		print("[Benchmark] Press Play (F5), not Run: the benchmark needs a player to send to.")
+	end
+end)
 
 local NAMES = { "Branch", "NetRay", "Blink" }
 local api: { [string]: any } = {
@@ -21,10 +29,6 @@ local remotes: { [string]: RemoteEvent } = {
 	NetRay = ReplicatedStorage:WaitForChild("NetRay_RELIABLE") :: RemoteEvent,
 	Blink = ReplicatedStorage:WaitForChild("BLINK_RELIABLE_REMOTE") :: RemoteEvent,
 }
-
-local function report(...: any)
-	print("BENCH|" .. table.concat({ ... }, "|"))
-end
 
 -- Every library hands the car over in its own shape; normalise for checking.
 local seen = { Branch = 0, NetRay = 0, Blink = 0 }
@@ -100,9 +104,10 @@ local function counters(name: string): any
 	return (_G :: any).__BENCH[name]
 end
 
-local function down(name: string, player: Player, frames: number, perFrame: number, all: boolean)
+-- ns per send: the Fire calls, the frame flush, both; bytes per send, remote calls per frame
+local function down(name: string, player: Player, frames: number, perFrame: number, all: boolean): any
 	local c = counters(name)
-	local bytes0, calls0, flush0, send0 = c.bytes, c.calls, c.flushCpu, c.sendCpu
+	local bytes0, calls0, flush0 = c.bytes, c.calls, c.flushCpu
 	local send = senders[name]
 	local target = if all then nil else player
 	local cpu = 0
@@ -118,16 +123,13 @@ local function down(name: string, player: Player, frames: number, perFrame: numb
 	RunService.Heartbeat:Wait()
 	local sent = frames * perFrame
 	local flush = c.flushCpu - flush0
-	report(
-		if all then "downAll" else "down",
-		name,
-		string.format("%.0f", cpu / sent * 1e9),
-		string.format("%.0f", flush / sent * 1e9),
-		string.format("%.0f", (cpu + flush) / sent * 1e9),
-		string.format("%.1f", (c.bytes - bytes0) / sent),
-		string.format("%.2f", (c.calls - calls0) / frames),
-		string.format("%.0f", (c.sendCpu - send0) / sent * 1e9)
-	)
+	return {
+		fire = cpu / sent * 1e9,
+		flush = flush / sent * 1e9,
+		total = (cpu + flush) / sent * 1e9,
+		bytes = (c.bytes - bytes0) / sent,
+		calls = (c.calls - calls0) / frames,
+	}
 end
 
 local function sameCar(a: any, b: any): boolean
@@ -139,12 +141,14 @@ local function sameCar(a: any, b: any): boolean
 		and a.price == b.price
 end
 
-local function decodeUp(player: Player)
+-- ns per car to read one captured frame of 50 cars (best of 5 x 2000)
+local function decodeUp(player: Player): any
+	local out = {}
 	for _, name in NAMES do
 		local args = captured[name]
 		local recv = (_G :: any).__BENCH_RECV[name]
 		if not args or not recv then
-			report("decodeUp", name, "no packet captured")
+			out[name] = { failed = "no packet captured" }
 			continue
 		end
 		local a1, a2 = args[1], args[2]
@@ -159,11 +163,13 @@ local function decodeUp(player: Player)
 			best = math.min(best, os.clock() - t)
 		end
 		local perCall = (seen[name] - before) / (5 * iterations)
-		report("decodeUp", name, string.format("%.0f", best / (iterations * perCall) * 1e9), string.format("%d", perCall))
+		out[name] = { ns = best / (iterations * perCall) * 1e9, cars = perCall }
 	end
+	return out
 end
 
 Control.OnServerEvent:Connect(function(player: Player, command: string, arg: any)
+	local result: any = nil
 	if command == "capture" then
 		capturing = arg
 		captured[arg] = nil
@@ -178,13 +184,14 @@ Control.OnServerEvent:Connect(function(player: Player, command: string, arg: any
 				ok += 1
 			end
 		end
-		report("verify", arg, `{ok}/{#Entities}`, `total received {seen[arg]}`)
+		result = { ok = ok, of = #Entities, total = seen[arg] }
 	elseif command == "decodeUp" then
 		capturing = nil
-		decodeUp(player)
+		result = decodeUp(player)
 	elseif command == "down" or command == "downAll" then
+		result = {}
 		for _, name in NAMES do
-			down(name, player, arg.frames, arg.perFrame, command == "downAll")
+			result[name] = down(name, player, arg.frames, arg.perFrame, command == "downAll")
 			task.wait(0.5)
 		end
 	elseif command == "sendMoves" then
@@ -193,7 +200,5 @@ Control.OnServerEvent:Connect(function(player: Player, command: string, arg: any
 			senders[arg.name](nil)
 		end
 	end
-	Control:FireClient(player, "done")
+	Control:FireClient(player, "done", result)
 end)
-
-report("serverReady", #Players:GetPlayers())
