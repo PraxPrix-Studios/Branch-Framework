@@ -1,0 +1,38 @@
+struct Car {
+	brand: string,
+	carName: string,
+	carId: u16,
+	available: boolean,
+	dealers: u8,
+	price: f64,
+}
+
+struct Move {
+	pos: vector,
+	vel: vector,
+	yaw: f32,
+	grounded: boolean,
+	crouch: boolean,
+	sprint: boolean,
+	anim: u8,
+}
+
+event Cars {
+	From: Client,
+	Type: Reliable,
+	Call: SingleSync,
+	Data: Car,
+}
+
+event Moves {
+	From: Server,
+	Type: Reliable,
+	Call: SingleSync,
+	Data: Move,
+}
+
+function Ping {
+	Yield: SingleSync,
+	Data: (f64),
+	Return: (f64),
+}

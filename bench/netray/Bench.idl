@@ -1,0 +1,69 @@
+struct Entity {
+	id: u8,
+	x: u8,
+	y: u8,
+	z: u8,
+	orientation: u8,
+	animation: u8,
+}
+
+struct Move {
+	pos: vector,
+	vel: vector,
+	yaw: f32,
+	grounded: boolean,
+	crouch: boolean,
+	sprint: boolean,
+	anim: u8,
+}
+
+struct Car {
+	brand: string,
+	carName: string,
+	carId: u16,
+	available: boolean,
+	dealers: u8,
+	price: f64,
+}
+
+event Booleans {
+	From: Client,
+	Type: Reliable,
+	Call: SingleSync,
+	Data: (array<boolean, 1000>),
+}
+
+event Entities {
+	From: Client,
+	Type: Reliable,
+	Call: SingleSync,
+	Data: (array<Entity, 1000>),
+}
+
+event Chat {
+	From: Client,
+	Type: Reliable,
+	Call: SingleSync,
+	Data: (string, u8),
+}
+
+event Cars {
+	From: Client,
+	Type: Reliable,
+	Call: SingleSync,
+	Data: Car,
+}
+
+event Moves {
+	From: Server,
+	Type: Reliable,
+	Call: SingleSync,
+	Data: Move,
+}
+
+event MovesU {
+	From: Server,
+	Type: Unreliable,
+	Call: SingleSync,
+	Data: Move,
+}
