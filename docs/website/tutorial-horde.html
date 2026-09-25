@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tutorial: a horde of 200 mobs · Branch</title>
+<meta name="description" content="200 mobs, one player: take the network traffic from 176 KB/s to 10 KB/s by adding a few words to one declaration. Measured at every step.">
+<link rel="icon" href="assets/mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="assets/site.css">
+<style>
+.stat{display:flex;align-items:baseline;flex-wrap:wrap;gap:6px 14px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 18px;margin:16px 0}
+.stat b{font:700 30px/1 var(--display);letter-spacing:-.02em}
+.stat span{color:var(--muted);font-size:15px}
+.stat .up{color:var(--warn)} .stat .down{color:var(--good)}
+.file{display:inline-block;font:500 12px var(--mono);color:var(--cyan);margin:14px 0 -8px}
+.bars{display:grid;gap:10px;margin:16px 0 22px}
+.bars .row{display:grid;grid-template-columns:130px minmax(0,1fr) 88px;gap:12px;align-items:center;font-size:14px}
+.bars .row span:first-child{color:var(--muted)}
+.bars .track{height:14px;background:var(--raise);border-radius:7px;overflow:hidden}
+.bars .fill{height:100%;border-radius:7px;background:var(--faint)}
+.bars .row.final .fill{background:var(--grad)}
+.bars .row b{font:600 14px var(--mono);text-align:right}
+@media (max-width:600px){.bars .row{grid-template-columns:96px minmax(0,1fr) 74px}}
+.versus{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}
+.versus div{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.versus small{display:block;font:500 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+.versus b{display:block;font:700 34px/1.1 var(--display);margin:6px 0 4px}
+.versus .after{border-color:color-mix(in srgb,var(--cyan) 45%,var(--line))}
+.versus .after b{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.versus span{color:var(--muted);font-size:14px}
+</style>
+</head>
+<body data-root="" data-page="tutorial-horde">
+<div class="layout">
+<aside class="side" id="sidebar" aria-label="Documentation"></aside>
+<main class="doc">
+<div class="eyebrow">start/tutorial-horde</div>
+<h1>Tutorial: a horde of <em>200 mobs</em></h1>
+<p class="lead">The server moves 200 mobs and sends them to every player. Sent the plain way, that is 176 KB of traffic a second. Four words in one declaration bring it to 10 KB/s. Every number on this page was measured.</p>
+<div class="cta">
+  <a class="btn primary" href="assets/tutorial/Horde.rbxl" download>Download the finished game (.rbxl)</a>
+  <a class="btn" href="tutorial.html">The first tutorial</a>
+</div>
+<div class="note"><b>How the numbers were measured:</b> 200 mobs (some walking, the rest resting), one player standing in the middle, 10 seconds at 60 frames a second. The finished game shows 10.6 KB/s in Branch Studio's live profiler in Studio.</div>
+
+<h2>1. The game, the plain way</h2>
+<p>A service keeps 200 mobs. Each walks to a random spot near its home, rests a few seconds, and walks again; resting mobs bob a little, like they breathe. Every frame, the server sends each mob's state to everyone:</p>
+<span class="file">Services/HordeService</span>
+<pre><code>local RunService = game:GetService("RunService")
+local Branch = require(game.ReplicatedStorage.Packages.Branch)
+
+local HordeService = {}
+
+HordeService.Network = {
+	Mob = { From = "Server", Data = { id = "u16", pos = "vector", hp = "u8(0..100)" } },
+	Hit = { From = "Client", Rate = "5/s", Data = "u16" }, -- a player hits mob #id
+}
+
+local COUNT = 200
+local SPEED = 8 -- studs per second
+
+type Mob = { id: number, pos: Vector3, home: Vector3, target: Vector3?, rest: number, hp: number }
+local mobs: { Mob } = {}
+
+local function spot(around: Vector3, radius: number): Vector3
+	return around + Vector3.new(math.random(-radius, radius), 0, math.random(-radius, radius))
+end
+
+function HordeService:Init()
+	for id = 1, COUNT do
+		local home = spot(Vector3.new(0, 2, 0), 220)
+		mobs[id] = { id = id, pos = home, home = home, target = nil, rest = math.random() * 3, hp = 100 }
+	end
+end
+
+function HordeService:Start()
+	local Net = Branch.Network.Server.HordeService
+	local clock = 0
+
+	-- players hit mobs; the server decides if the hit counts
+	Net.Hit.On(function(player, id)
+		local mob = mobs[id]
+		local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+		if mob and root and (root.Position - mob.pos).Magnitude &lt;= 12 then
+			mob.hp = math.max(mob.hp - 25, 0)
+			if mob.hp == 0 then
+				mob.hp = 100
+				mob.pos = spot(mob.home, 40) -- it comes back somewhere else
+			end
+		end
+	end)
+	Branch.Network.OnReject(function(player, reason)
+		warn(`{player.Name}: {reason}`) -- too many hits, forged packets
+	end)
+
+	RunService.Heartbeat:Connect(function(dt)
+		clock += dt
+		for _, mob in mobs do
+			if mob.target then
+				local offset = mob.target - mob.pos
+				if offset.Magnitude &lt;= SPEED * dt then
+					mob.pos, mob.target, mob.rest = mob.target, nil, 2 + math.random() * 3
+				else
+					mob.pos += offset.Unit * SPEED * dt
+				end
+			else
+				mob.rest -= dt
+				if mob.rest &lt;= 0 then
+					mob.target = spot(mob.home, 40)
+				end
+			end
+			-- resting mobs still breathe a little
+			local shown = mob.pos + Vector3.new(0, math.sin(clock * 2 + mob.id) * 0.05, 0)
+			Net.Mob.FireAll({ id = mob.id, pos = shown, hp = mob.hp })
+		end
+	end)
+end
+
+return HordeService</code></pre>
+<p>The client draws a part for each mob and glides it to the newest position, so updates can come less often without looking choppy:</p>
+<span class="file">Controllers/HordeController</span>
+<pre><code>local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Branch = require(game.ReplicatedStorage.Packages.Branch)
+
+local HordeController = {}
+
+type View = { part: BasePart, target: Vector3 }
+
+function HordeController:Start()
+	local Net = Branch.Network.Client.HordeService
+	local folder = Instance.new("Folder")
+	folder.Name = "Mobs"
+	folder.Parent = workspace
+	local views: { [number]: View } = {}
+
+	-- the server sends states; the client draws a part per mob
+	Net.Mob.On(function(mob)
+		local view = views[mob.id]
+		if not view then
+			local part = Instance.new("Part")
+			part.Name = tostring(mob.id)
+			part.Size = Vector3.new(3, 3, 3)
+			part.Anchored = true
+			part.CanCollide = false
+			part.Position = mob.pos
+			part.Parent = folder
+			view = { part = part, target = mob.pos }
+			views[mob.id] = view
+		end
+		view.target = mob.pos
+		view.part.Color = Color3.fromRGB(255, 70, 70):Lerp(Color3.fromRGB(80, 220, 120), mob.hp / 100)
+	end)
+
+	-- glide between updates, so 4 or 20 updates a second still look smooth
+	RunService.RenderStepped:Connect(function(dt)
+		local alpha = math.min(dt * 10, 1)
+		for _, view in views do
+			view.part.Position = view.part.Position:Lerp(view.target, alpha)
+		end
+	end)
+
+	-- click a mob to hit it
+	local mouse = Players.LocalPlayer:GetMouse()
+	UserInputService.InputBegan:Connect(function(input, busy)
+		if not busy and input.UserInputType == Enum.UserInputType.MouseButton1 then
+			local target = mouse.Target
+			if target and target.Parent == folder then
+				Net.Hit.Fire(tonumber(target.Name) :: number)
+			end
+		end
+	end)
+end
+
+return HordeController</code></pre>
+<div class="stat"><b>176 KB/s</b><span>to every player. 200 mobs × 60 frames = 12,000 mob updates a second.</span></div>
+
+<h2>2. Send only what changed: Delta</h2>
+<p><code>Delta</code> sends a mob in full once, then only the fields that changed. <code>Key = "id"</code> gives every mob its own state, so one event carries all 200:</p>
+<pre><code>Mob = { From = "Server", Delta = true, Key = "id", Data = { id = "u16", pos = "vector", hp = "u8(0..100)" } },</code></pre>
+<div class="stat"><b class="up">188 KB/s</b><span>a little <em>more</em> than before.</span></div>
+<p>Why? Every mob breathes, so its position changes every frame, and Delta sends it every frame, plus a byte saying what changed. Delta can only save what does not change. That is the next step.</p>
+
+<h2>3. Ignore tiny moves: Threshold</h2>
+<pre><code>Mob = { From = "Server", Delta = true, Key = "id", Threshold = { pos = 0.1 }, Data = { id = "u16", pos = "vector", hp = "u8(0..100)" } },</code></pre>
+<div class="stat"><b class="down">115 KB/s</b><span>−39% from the start. Resting mobs now cost almost nothing: their breathing never moves them 0.1 studs.</span></div>
+<p>The receiver is never more than 0.1 studs off, and small moves add up: a mob that drifts slowly is sent as soon as it has moved 0.1 studs in total. <a href="guide/network.html#threshold">Threshold</a></p>
+
+<h2>4. Fewer updates a second: Hz</h2>
+<pre><code>Mob = { From = "Server", Delta = true, Key = "id", Threshold = { pos = 0.1 }, Hz = 20, Data = { id = "u16", pos = "vector", hp = "u8(0..100)" } },</code></pre>
+<div class="stat"><b class="down">40 KB/s</b><span>the newest state of each mob goes out 20 times a second instead of 60. The client's gliding hides the difference.</span></div>
+
+<h2>5. Far mobs update rarely: Lod</h2>
+<p>A mob 200 studs away does not need 20 updates a second. <code>Lod</code> sets the rate by distance, and one line of code changes: <code>FireAll</code> becomes <code>FireFrom</code>, from where the mob is.</p>
+<pre><code>Mob = {
+	From = "Server",
+	Delta = true, -- only what changed
+	Key = "id", -- each mob keeps its own state
+	Hz = 20, -- the newest state, 20 times a second
+	Threshold = { pos = 0.1 }, -- ignore moves under 0.1 studs
+	Lod = { { 80, 20 }, { 250, 4 } }, -- near: 20/s, far: 4/s, beyond: nothing
+	Data = { id = "u16", pos = "vector", hp = "u8(0..100)" },
+},</code></pre>
+<pre><code>Net.Mob.FireFrom(mob.pos, { id = mob.id, pos = shown, hp = mob.hp })   -- was: Net.Mob.FireAll({ ... })</code></pre>
+<div class="stat"><b class="down">10.3 KB/s</b><span>within 80 studs: 20 updates a second; up to 250 studs: 4; further away, nothing.</span></div>
+
+<h2>Before and after</h2>
+<div class="versus">
+  <div><small>Before</small><b>176 KB/s</b><span>12,000 mob updates a second</span></div>
+  <div class="after"><small>After</small><b>10.3 KB/s</b><span>977 mob updates a second: <strong>17× less traffic</strong></span></div>
+</div>
+<div class="bars" role="img" aria-label="Traffic at every step">
+  <div class="row"><span>Plain</span><div class="track"><div class="fill" style="width:93.6%"></div></div><b>176.0</b></div>
+  <div class="row"><span>+ Delta, Key</span><div class="track"><div class="fill" style="width:100%"></div></div><b>187.7</b></div>
+  <div class="row"><span>+ Threshold</span><div class="track"><div class="fill" style="width:61.3%"></div></div><b>115.0</b></div>
+  <div class="row"><span>+ Hz = 20</span><div class="track"><div class="fill" style="width:21.3%"></div></div><b>40.0</b></div>
+  <div class="row final"><span>+ Lod</span><div class="track"><div class="fill" style="width:5.5%"></div></div><b>10.3</b></div>
+</div>
+<p>KB per second to one player. The game code is the same at every step: only the declaration changed (and <code>FireAll</code> became <code>FireFrom</code> for Lod).</p>
+
+<h2>Bonus: hits that cannot be cheated</h2>
+<p>The finished game lets you click a mob to hit it. The declaration and the server's check:</p>
+<pre><code>Hit = { From = "Client", Rate = "5/s", Data = "u16" }, -- a player hits mob #id</code></pre>
+<pre><code>-- players hit mobs; the server decides if the hit counts
+Net.Hit.On(function(player, id)
+	local mob = mobs[id]
+	local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	if mob and root and (root.Position - mob.pos).Magnitude &lt;= 12 then
+		mob.hp = math.max(mob.hp - 25, 0)
+		if mob.hp == 0 then
+			mob.hp = 100
+			mob.pos = spot(mob.home, 40) -- it comes back somewhere else
+		end
+	end
+end)</code></pre>
+<ul>
+  <li><strong><code>Rate = "5/s"</code></strong>: an auto-clicker sending 100 hits a second gets 5 through; <code>OnReject</code> logs the rest.</li>
+  <li><strong>The server checks the distance</strong>: a hit from across the map does nothing.</li>
+  <li><strong><code>hp = "u8(0..100)"</code></strong>: a declared range. Anything a client could send outside it is refused before your code runs.</li>
+</ul>
+<p>One more thing the profiler found: <code>id</code> never goes above 200, so <code>u8</code> would do instead of <code>u16</code>. Try <b>Profile</b> on Branch Studio's Network page and apply it with one click. <a href="guide/network.html#profile">Apply the hints</a></p>
+
+<h2>The finished service</h2>
+<span class="file">Services/HordeService</span>
+<pre><code>local RunService = game:GetService("RunService")
+local Branch = require(game.ReplicatedStorage.Packages.Branch)
+
+local HordeService = {}
+
+HordeService.Network = {
+	Mob = {
+		From = "Server",
+		Delta = true, -- only what changed
+		Key = "id", -- each mob keeps its own state
+		Hz = 20, -- the newest state, 20 times a second
+		Threshold = { pos = 0.1 }, -- ignore moves under 0.1 studs
+		Lod = { { 80, 20 }, { 250, 4 } }, -- near: 20/s, far: 4/s, beyond: nothing
+		Data = { id = "u16", pos = "vector", hp = "u8(0..100)" },
+	},
+	Hit = { From = "Client", Rate = "5/s", Data = "u16" }, -- a player hits mob #id
+}
+
+local COUNT = 200
+local SPEED = 8 -- studs per second
+
+type Mob = { id: number, pos: Vector3, home: Vector3, target: Vector3?, rest: number, hp: number }
+local mobs: { Mob } = {}
+
+local function spot(around: Vector3, radius: number): Vector3
+	return around + Vector3.new(math.random(-radius, radius), 0, math.random(-radius, radius))
+end
+
+function HordeService:Init()
+	for id = 1, COUNT do
+		local home = spot(Vector3.new(0, 2, 0), 220)
+		mobs[id] = { id = id, pos = home, home = home, target = nil, rest = math.random() * 3, hp = 100 }
+	end
+end
+
+function HordeService:Start()
+	local Net = Branch.Network.Server.HordeService
+	local clock = 0
+
+	-- players hit mobs; the server decides if the hit counts
+	Net.Hit.On(function(player, id)
+		local mob = mobs[id]
+		local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+		if mob and root and (root.Position - mob.pos).Magnitude &lt;= 12 then
+			mob.hp = math.max(mob.hp - 25, 0)
+			if mob.hp == 0 then
+				mob.hp = 100
+				mob.pos = spot(mob.home, 40) -- it comes back somewhere else
+			end
+		end
+	end)
+	Branch.Network.OnReject(function(player, reason)
+		warn(`{player.Name}: {reason}`) -- too many hits, forged packets
+	end)
+
+	RunService.Heartbeat:Connect(function(dt)
+		clock += dt
+		for _, mob in mobs do
+			if mob.target then
+				local offset = mob.target - mob.pos
+				if offset.Magnitude &lt;= SPEED * dt then
+					mob.pos, mob.target, mob.rest = mob.target, nil, 2 + math.random() * 3
+				else
+					mob.pos += offset.Unit * SPEED * dt
+				end
+			else
+				mob.rest -= dt
+				if mob.rest &lt;= 0 then
+					mob.target = spot(mob.home, 40)
+				end
+			end
+			-- resting mobs still breathe a little
+			local shown = mob.pos + Vector3.new(0, math.sin(clock * 2 + mob.id) * 0.05, 0)
+			Net.Mob.FireFrom(mob.pos, { id = mob.id, pos = shown, hp = mob.hp })
+		end
+	end)
+end
+
+return HordeService</code></pre>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

@@ -8,6 +8,7 @@
 			["index", "Home"],
 			["getting-started", "Getting started"],
 			["tutorial", "Tutorial: a coin game"],
+			["tutorial-horde", "Tutorial: 200 mobs"],
 			["features", "Unique features"],
 		] },
 		{ group: "guide", title: "Guides", pages: [
