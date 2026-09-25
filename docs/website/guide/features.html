@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Using the features · Branch</title>
+<meta name="description" content="Step by step: how to turn on and use every Branch feature, from Latest, Delta and FireNear to rate limits, the live network profiler and safe player data.">
+<link rel="icon" href="../assets/mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="../assets/site.css">
+<style>
+.doc h3[id]{scroll-margin-top:84px}
+.auto{display:inline-block;font:600 10.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 8px;margin-left:8px;vertical-align:middle}
+.steps{counter-reset:s;list-style:none;padding-left:0}
+.steps>li{counter-increment:s;position:relative;padding-left:34px;margin:8px 0}
+.steps>li::before{content:counter(s);position:absolute;left:0;top:1px;width:22px;height:22px;border-radius:50%;background:var(--grad);color:#0b0b12;font:700 12px/22px var(--mono);text-align:center}
+.check{color:var(--muted);font-size:15px}
+.check b{color:var(--good)}
+</style>
+</head>
+<body data-root="../" data-page="guide/features">
+<div class="layout">
+<aside class="side" id="sidebar" aria-label="Documentation"></aside>
+<main class="doc">
+<div class="eyebrow">guide/features</div>
+<h1>Using the features</h1>
+<p class="lead">Every feature from <a href="../features.html">Unique features</a>, step by step: how to turn it on, a full example, the rules, and how to check that it works. Features marked <span class="auto">automatic</span> need nothing from you.</p>
+<div class="note"><b>Before you start.</b> Networking features are declared in a service's <code>Network</code> table and compiled by Branch Studio as you type. If you have not declared an event yet, read <a href="network.html">Networking</a> first.</div>
+
+<!-- ───────────────────────── Networking ───────────────────────── -->
+<h2 id="networking">Networking you declare</h2>
+
+<h3 id="declared">Declared inside your services</h3>
+<ol class="steps">
+  <li>Open a server segment (any module named <code>…Service</code>).</li>
+  <li>Add a <code>Network</code> table with your events:
+<pre><code>local ShopService = {}
+
+ShopService.Network = {
+	Bought = { From = "Server", Data = { item = "string(..32)", coins = "u32" } },
+	Buy    = { Data = "string(..32)", Return = "boolean" },   -- a function: client asks, server answers
+}
+
+return ShopService</code></pre></li>
+  <li>Stop typing for a moment: Branch Studio compiles it. Use it from the server as <code>Branch.Network.Server.ShopService</code> and from the client as <code>Branch.Network.Client.ShopService</code>.</li>
+</ol>
+<p class="check"><b>Check:</b> the event appears on the plugin's <b>Network</b> page, and autocomplete knows its arguments.</p>
+
+<h3 id="stepped">Stepped numbers</h3>
+<p>Say how precise a number needs to be, and Branch sends the step number instead of the full value.</p>
+<ol class="steps">
+  <li>Write the type as <code>type(min..max, step)</code>:
+<pre><code>Aim = { From = "Client", Type = "Unreliable", Data = {
+	pitch = "f32(-90..90, 0.5)",   -- 361 steps  -> 2 bytes instead of 4
+	charge = "f32(0..1, 0.01)",    -- 101 steps  -> 1 byte instead of 4
+} },</code></pre></li>
+  <li>Send normal numbers: <code>Net.Aim.Fire({ pitch = 12.3, charge = 0.5 })</code>. The receiver gets the value rounded to the nearest step (<code>12.5</code>).</li>
+</ol>
+<ul>
+  <li><strong>Size.</strong> Up to 256 steps take 1 byte, up to 65,536 take 2, more take 4.</li>
+  <li><strong>Pick the coarsest step you can live with.</strong> The profiler (<a href="#hints">smaller-type hints</a>) tells you the real range of your values.</li>
+  <li><strong>Out of range.</strong> A client value outside <code>min..max</code> is rejected on the server and reported to <a href="#onreject">OnReject</a>.</li>
+</ul>
+
+<h3 id="runs">Runs <span class="auto">automatic</span></h3>
+<p>Fire the same event several times in a row (say, 50 hit markers) and its id is written once for the whole run instead of once per event. Nothing to turn on: fire events as usual. Runs form when the same event is fired three or more times in a row to the same player.</p>
+
+<h3 id="bools">Packed booleans <span class="auto">automatic</span></h3>
+<p>All booleans in a struct and all "is this optional value here" flags share one bit mask, and boolean arrays pack 8 per byte. Declare them normally: <code>Data = { crouch = "boolean", sprint = "boolean", target = "Instance(Model)?" }</code> costs one byte of flags.</p>
+
+<h3 id="fireall">One FireAllClients per frame <span class="auto">automatic</span></h3>
+<p>Call <code>FireAll</code> as often as you like: a frame's broadcasts are written once and shipped in one <code>FireAllClients</code>. Mixing <code>FireAll</code> with <code>Fire</code> to single players is safe: each player still receives everything in the order you fired it.</p>
+
+<h3 id="unreliable">Unreliable, batched safely <span class="auto">automatic</span></h3>
+<p>Declare <code>Type = "Unreliable"</code> for things that may be lost (positions, effects). Branch groups a frame's unreliable events into packets that stay under Roblox's limit (820 bytes by default), instead of one remote call per event.</p>
+<div class="note warn"><b>Unreliable can be lost</b>, especially in the first seconds after a player joins. Anything that must arrive (purchases, deaths, state changes) should stay Reliable.</div>
+
+<h3 id="contained">Errors that stay contained <span class="auto">automatic</span></h3>
+<ul>
+  <li>A wrong argument to <code>Fire</code> errors at your call, with the event's name, and the rest of the frame is sent normally. These checks run in Studio by default (<b>Settings → Network → Argument checks</b>).</li>
+  <li>If one of your listeners throws, the error is printed with its traceback and the other events in the packet are still delivered.</li>
+</ul>
+
+<!-- ───────────────────────── Send less ───────────────────────── -->
+<h2 id="send-less">Send less</h2>
+
+<h3 id="latest">Latest</h3>
+<p>For state that changes all the time (a position, a health bar, an aim direction), only the newest value matters. With <code>Latest</code>, several sends to the same player in one frame become one: the newest.</p>
+<ol class="steps">
+  <li>Add <code>Latest = true</code> to the event:
+<pre><code>Position = { From = "Server", Type = "Unreliable", Latest = true, Data = "vector" },</code></pre></li>
+  <li>Fire it as usual, as often as your code wants to. You do not need to track "did I already send this frame":
+<pre><code>-- server: called from several systems in the same frame
+Net.Position.Fire(player, walkTarget)
+Net.Position.Fire(player, knockbackTarget)   -- only this one is sent</code></pre></li>
+  <li>The client listens normally: <code>Net.Position.On(function(pos) ... end)</code>.</li>
+</ol>
+<ul>
+  <li><strong>"Newest" is per player.</strong> A <code>FireAll</code> replaces earlier single sends of that frame; a <code>Fire</code> to one player after a <code>FireAll</code> also reaches that player.</li>
+  <li><strong>Sent at the end of the frame</strong>, after the frame's other events. Don't use it for an event whose order relative to other events matters.</li>
+  <li><strong>Works both ways</strong> (server → client and client → server), but not on functions: every call needs its own answer.</li>
+</ul>
+<p class="check"><b>Check:</b> in the live profiler (Play in Studio), the event's sends per second stop growing past your frame rate.</p>
+
+<h3 id="delta">Delta</h3>
+<p>The first send carries the whole struct. After that, only the fields that changed since the last send to that player travel. A character standing still costs almost nothing.</p>
+<ol class="steps">
+  <li>The event must be <b>Reliable</b> (the default) and its <code>Data</code> must be a struct. Add <code>Delta = true</code>:
+<pre><code>Stats = { From = "Server", Delta = true, Data = { hp = "u8", mana = "u8", stunned = "boolean", zone = "string(..24)" } },</code></pre></li>
+  <li>Fire the full struct every time. Branch works out what changed:
+<pre><code>-- server, e.g. in Heartbeat
+Net.Stats.Fire(player, { hp = hum.Health, mana = mana, stunned = stunned, zone = zoneName })</code></pre></li>
+  <li>The client always receives the full struct, with unchanged fields filled in for you:
+<pre><code>Net.Stats.On(function(s)
+	healthBar.Size = UDim2.fromScale(s.hp / 100, 1)
+end)</code></pre></li>
+</ol>
+<h4>Many objects in one event: <code>Key</code></h4>
+<p>To send many units, projectiles or doors through one event, name the field that tells them apart. Each key keeps its own state:</p>
+<pre><code>Unit = { From = "Server", Delta = true, Key = "id", Data = { id = "u16", pos = "vector", hp = "u8", stunned = "boolean" } },</code></pre>
+<pre><code>-- server
+for id, unit in units do
+	Net.Unit.FireAll({ id = id, pos = unit.Position, hp = unit.Hp, stunned = unit.Stunned })
+end
+
+-- when a unit dies: drop its state on both sides
+Net.Unit.Forget(id)
+
+-- client
+Net.Unit.On(function(u)
+	local model = models[u.id]
+	model:PivotTo(CFrame.new(u.pos))
+end)</code></pre>
+<ul>
+  <li><strong>Always call <code>Forget(key)</code></strong> when an object is gone, or both sides keep its state in memory. The next send for that key goes out in full. Without <code>Key</code>, <code>Forget()</code> makes the next send to every player full.</li>
+  <li><strong>The key</strong> must be a plain value (a number, string, …), not optional and not a table.</li>
+  <li><strong>Limits.</strong> Reliable only (a lost unreliable packet would leave the client with a wrong state); up to 32 fields besides the key.</li>
+  <li><strong>Tables inside the struct</strong> (arrays, maps, nested structs) are sent every time: comparing them would cost more than it saves. Put things that change rarely in their own Delta event.</li>
+  <li><strong>New players</strong> automatically get the full struct first, even through <code>FireAll</code>.</li>
+  <li><strong>With <code>Latest = true</code></strong> as well, only the frame's newest value is compared and sent.</li>
+</ul>
+<p class="check"><b>Check:</b> in the live profiler, the event's bytes per second drop sharply while nothing changes.</p>
+
+<h3 id="zero-bool">Booleans that cost zero bytes <span class="auto">automatic</span></h3>
+<p>In a <a href="#delta">Delta</a> event, a boolean that changed is not sent at all: its "changed" bit already tells the receiver to flip it. Just declare booleans in a Delta struct:</p>
+<pre><code>Door = { From = "Server", Delta = true, Key = "id", Data = { id = "u16", open = "boolean", locked = "boolean" } },
+-- opening a door sends: id + one mask byte. The "open" value itself costs 0 bytes.</code></pre>
+<p>This is a good reason to turn flags like <code>open</code>, <code>stunned</code> or <code>visible</code> into booleans in a Delta event, instead of sending separate events for them.</p>
+
+<h3 id="near">FireNear</h3>
+<p>Send only to players whose character is within a radius: explosions, footsteps, local sounds, hit effects.</p>
+<ol class="steps">
+  <li>Nothing to declare: every server → client event has <code>FireNear</code>.</li>
+  <li>Pass a position, a radius in studs, then the event's arguments:
+<pre><code>-- server
+Net.Explosion.FireNear(position, 150, position, damage)</code></pre></li>
+</ol>
+<ul>
+  <li><strong>Distance</strong> is measured to each player's <code>Character.PrimaryPart</code>. Players without a character (dead, loading) are skipped.</li>
+  <li><strong>Choose the radius by what players can see or hear.</strong> Too small, and players at the edge miss the effect.</li>
+  <li><strong>With Latest and Delta</strong> it works like <code>FireList</code>: each nearby player is handled separately.</li>
+</ul>
+<p class="check"><b>Check:</b> with two test players far apart (<b>Test → Clients and Servers</b>), only the near one receives the event.</p>
+
+<!-- ───────────────────────── Security ───────────────────────── -->
+<h2 id="security">Security</h2>
+
+<h3 id="validated">Everything from clients is validated <span class="auto">automatic</span></h3>
+<p>Your declaration is the rulebook. Whatever you declare for a <code>From = "Client"</code> event is enforced on the server before any listener runs: <code>u8</code> can't be 300, <code>string(..32)</code> can't be 10,000 characters, <code>Instance(Tool)</code> can't be a Part, NaN and infinity never get through. The tighter your types, the less an exploiter can send.</p>
+<pre><code>Hit = { From = "Client", Data = { target = "Instance(Model)", power = "f32(0..1, 0.01)" } },
+-- on the server, target is always a Model and power is always 0..1</code></pre>
+
+<h3 id="rate">Rate limits</h3>
+<p>Validation checks that a packet is correct; <code>Rate</code> checks how often a player sends it.</p>
+<ol class="steps">
+  <li>Add <code>Rate</code> to client → server events and functions, as <code>"N/s"</code> or <code>"N/m"</code>:
+<pre><code>Attack = { From = "Client", Rate = "10/s", Data = { dir = "vector" } },
+Buy    = { Data = "string(..32)", Return = "boolean", Rate = "30/m" },</code></pre></li>
+  <li>Listen as usual. Extra events never reach your listener; an extra function call answers "failed", so the client's <code>Invoke</code> errors:
+<pre><code>-- client
+local ok, err = pcall(Net.Buy.Invoke, "sword")</code></pre></li>
+  <li>Optionally, react to spammers through <a href="#onreject">OnReject</a>.</li>
+</ol>
+<ul>
+  <li><strong>Bursts are fine.</strong> Each player has a bucket of N sends that refills at that rate, so a short burst up to the limit passes.</li>
+  <li><strong>Set it a bit above honest play.</strong> If your gun fires 8 times a second, use <code>"12/s"</code>, not <code>"8/s"</code>: network jitter can bunch honest sends together.</li>
+</ul>
+
+<h3 id="server-code">Server code never reaches players <span class="auto">automatic</span></h3>
+<p>Branch Studio writes the server half of the network to <code>ServerScriptService.BranchNetworkServer</code>. Players never download it, so they can't read your server checks, and a big game doesn't make every player load server code. You don't move or require anything: keep using <code>Branch.Network.Server</code>. Places compiled with older versions are moved over on the next compile.</p>
+<div class="note warn"><b>Don't move or rename <code>BranchNetworkServer</code></b> or its <code>Root</code> value. The plugin rewrites them on each compile.</div>
+
+<h3 id="onreject">OnReject</h3>
+<p>One place to hear about every malformed packet and every rate-limit breach. Put it in a server segment's <code>Init</code> or <code>Start</code>:</p>
+<pre><code>local strikes = {}
+
+Branch.Network.OnReject(function(player, reason)
+	warn(player.Name, "rejected:", reason)
+	if string.find(reason, "^rate limit:") then
+		strikes[player] = (strikes[player] or 0) + 1
+		if strikes[player] &gt;= 5 then
+			player:Kick("Too many requests")
+		end
+	end
+end)</code></pre>
+<ul>
+  <li><strong>Rate-limit reasons</strong> start with <code>rate limit:</code> and name the event. They are reported at most once a second per player and event.</li>
+  <li><strong>Other reasons</strong> (bad sizes, out-of-range values, unknown events) come from broken or forged packets. A normal client never sends them, so they are safe grounds for a kick.</li>
+</ul>
+
+<!-- ───────────────────────── Studio ───────────────────────── -->
+<h2 id="studio">Branch Studio</h2>
+
+<h3 id="compiler">Live compiler <span class="auto">automatic</span></h3>
+<p>Install Branch Studio and press <b>Install</b> on its <b>Overview</b> page. From then on, whenever you stop typing, it rebuilds typed autocomplete for <code>GetSegment</code> and data paths, and <code>Branch.Network</code>. Everything lands in one undo step: Ctrl+Z undoes a compile. To compile by hand, press <b>Compile</b> on the toolbar; <b>Live</b> turns compiling as you type on and off.</p>
+
+<h3 id="bytes">Bytes per fire, before you run <span class="auto">automatic</span></h3>
+<p>Open the plugin's <b>Network</b> page: each event shows its direction, reliability, and how many bytes one send costs. Change a type and watch the number change: it is the fastest way to choose between, say, <code>u16</code> and <code>f32(0..100, 0.5)</code>. Click an event to open its declaration.</p>
+
+<h3 id="profiler">Live network profiler</h3>
+<ol class="steps">
+  <li>Press <b>Play</b> in Studio. The <b>Branch Network (live)</b> window opens.</li>
+  <li>Play the game normally. Every second the window updates each event, in both directions: sends per second, bytes per second, and share of the total, busiest first.</li>
+  <li>Start with the top rows: those events are where savings matter. Typical fixes: <a href="#latest">Latest</a> for events sent several times a frame, <a href="#delta">Delta</a> for state that rarely changes, <a href="#near">FireNear</a> for local effects, <a href="#stepped">stepped numbers</a> for precise numbers.</li>
+</ol>
+<ul>
+  <li><strong>Zero cost in live games.</strong> The counters only run in Studio.</li>
+  <li><strong>Turn it off</strong> in <b>Settings → Editor → Live network profiler</b>.</li>
+</ul>
+
+<h3 id="hints">Smaller-type hints</h3>
+<p>Under the traffic table, the profiler lists numbers that could travel smaller, based on the values your game really sent:</p>
+<pre><code>Combat.Hit.damage is always a whole number from 0 to 200: declare it as u8 instead of u32 to save 3 B per value.</code></pre>
+<ol class="steps">
+  <li>Play long enough to see the real range (fight, buy, die: whatever the event covers).</li>
+  <li>Change the type in the declaration to the suggested one, leaving some headroom if the values can grow later.</li>
+  <li>Play again: the hint disappears, and the event's bytes per second drop.</li>
+</ol>
+<p>Hints cover whole numbers in bigger types, <code>f64</code> that fits in <code>f32</code>, and numbers that would fit a <a href="#stepped">stepped</a> type.</p>
+
+<h3 id="rename">Smart rename</h3>
+<p>Rename a module in the Explorer as usual. Branch Studio carries the new name through your code in one undo step: the module's table name, <code>GetSegment("Old")</code>, <code>Dependencies</code>, and paths like <code>script.Parent.Old</code> or <code>:WaitForChild("Old")</code> that really lead to it. Anything it could not update safely (a path through a variable, a chain split across lines) is listed in the <b>Log</b>: click each entry and fix it by hand.</p>
+
+<h3 id="engine-names">Engine names checked while you type <span class="auto">automatic</span></h3>
+<p>Write <code>Enum(KeyCode)</code> or <code>Instance(Model)</code> in a declaration. A misspelled enum is an error in <b>Problems</b> (the last working network stays in place), and an unknown class is a warning.</p>
+
+<h3 id="templates">Templates for new modules</h3>
+<p>Create a ModuleScript named <code>…Service</code> or <code>…Controller</code>: it is filled from your template, with <code>{NAME}</code> replaced by the module's name. Edit the templates in <b>Settings → Templates</b>.</p>
+
+<h3 id="install">Safe install and update</h3>
+<p>Press <b>Update</b> on the <b>Overview</b> page when a new runtime is available. Files that are no longer shipped are removed; files you edited by hand are first copied to <code>ServerStorage.BranchBackups</code>. Generated files and settings are kept.</p>
+
+<h3 id="light">Light on slow machines <span class="auto">automatic</span></h3>
+<p>The plugin re-reads only changed modules and waits longer between compiles on slow computers. To also turn off every animation, enable <b>Settings → Editor → Reduce motion</b>.</p>
+
+<!-- ───────────────────────── Data ───────────────────────── -->
+<h2 id="data">Player data</h2>
+
+<h3 id="template-checks">Template checks all the way down <span class="auto">automatic</span></h3>
+<p>Start data with a <code>Template</code> (see <a href="data.html">Player data</a>). Every write is then checked against it, including nested tables: <code>Data.Set(player, "stats.kills", "ten")</code> errors at that line instead of breaking the save later.</p>
+
+<h3 id="no-nan">No NaN, no infinity <span class="auto">automatic</span></h3>
+<p><code>Data.Set(player, "ratio", kills / deaths)</code> with 0 deaths errors at the call instead of silently making every later save fail. Guard divisions where they happen.</p>
+
+<h3 id="migrations">Migrations on a copy</h3>
+<p>When you rename or reshape a field, add a function to <code>Migrations</code>. Each one upgrades a profile by one version:</p>
+<pre><code>Migrations = {
+	function(data) data.gold = data.coins; data.coins = nil end,   -- v0 -> v1: coins renamed to gold
+},</code></pre>
+<p>If a migration errors, the saved data is untouched and the player is asked to rejoin. Only ever append: never edit or reorder a migration that already shipped.</p>
+
+<h3 id="template-warnings">Template change warnings</h3>
+<ol class="steps">
+  <li>Point <b>Settings → Paths → Data template</b> at your template module.</li>
+  <li>When you remove a field or change its type, <b>Problems</b> shows a warning: saved player data will not follow on its own.</li>
+  <li>Write the <a href="#migrations">migration</a>, then click the warning to accept the new shape.</li>
+</ol>
+<p>New fields need nothing: they are added to old saves automatically, so they never warn.</p>
+
+<h3 id="leaving">Writes on the way out <span class="auto">automatic</span></h3>
+<p>A segment's <code>PlayerRemoving</code> hook can still write the leaving player's data, and it is saved with the session. Write before the hook yields (<code>task.wait</code>, web calls).</p>
+
+<h3 id="observers">Observers that see everything</h3>
+<pre><code>Data.Observe(player, "stats.kills", function(new, old) end)   -- also fires when the whole "stats" is replaced
+Data.Get(player, "friends.12345")                              -- reaches dictionaries keyed by UserId</code></pre>
+
+<h3 id="datastores">A DataStore browser that protects players</h3>
+<ol class="steps">
+  <li>Open the plugin's <b>DataStores</b> page. Pick a store, then a key.</li>
+  <li>Browse freely: live data is <b>read-only</b>. Old versions, the 4 MB size meter and ProfileStore session locks are shown.</li>
+  <li>To edit, restore a version or delete, <b>click the lock twice</b>. Writes stay allowed until Studio closes. A profile that is in use, or changed since you opened it, is never overwritten.</li>
+</ol>
+<p>To try the page without real data, press <b>Try sample</b>: it is always editable.</p>
+
+<!-- ───────────────────────── Framework ───────────────────────── -->
+<h2 id="framework">The framework</h2>
+
+<h3 id="segments">Segments by name <span class="auto">automatic</span></h3>
+<p>Name a module <code>…Service</code> (server) or <code>…Controller</code> (client), anywhere under the roots you pass to <code>Branch:Start</code>, and it is loaded. Any other module is a helper you <code>require</code> yourself. Details: <a href="segments.html">Segments</a>.</p>
+
+<h3 id="lifecycle">A strict, readable lifecycle <span class="auto">automatic</span></h3>
+<p>Put setup that others rely on in <code>Init</code>, and list what you need in <code>Dependencies</code>: those segments' <code>Init</code> runs first. Loops and waiting go in <code>Start</code>. Player and frame work goes in hooks (<code>PlayerAdded</code>, <code>Heartbeat</code>, …), which share one engine connection per hook type.</p>
+
+<h3 id="failures">Failures you can see <span class="auto">automatic</span></h3>
+<p>Watch the Output: a slow <code>Init</code> warns after 5 seconds, a failed dependency is named, and a typo like <code>Branch.Netwrok</code> errors instead of returning nil. <code>Branch:GetReport()</code> returns every segment in load order with its status and <code>Init</code> time.</p>
+</main>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

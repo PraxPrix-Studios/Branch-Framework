@@ -12,6 +12,7 @@
 			["guide/segments", "Segments"],
 			["guide/data", "Player data"],
 			["guide/network", "Networking"],
+			["guide/features", "Using the features"],
 			["guide/studio", "Branch Studio"],
 			["guide/migrating", "Moving from Branch 1"],
 		] },
