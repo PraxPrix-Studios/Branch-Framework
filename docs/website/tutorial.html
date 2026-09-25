@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tutorial: a coin game · Branch</title>
+<meta name="description" content="Build a small Roblox game with Branch in about 15 minutes: services and controllers, saved player data, and networking the server checks.">
+<link rel="icon" href="assets/mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="assets/site.css">
+<style>
+.goal{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin:18px 0}
+.goal div{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:14.5px;color:var(--muted)}
+.goal b{display:block;color:var(--ink);font-size:15px;margin-bottom:2px}
+.file{display:inline-block;font:500 12px var(--mono);color:var(--cyan);margin:14px 0 -8px}
+.check{border-left:3px solid var(--good);background:var(--surface);border-radius:0 10px 10px 0;padding:10px 14px;margin:14px 0;color:var(--muted);font-size:15px}
+.check b{color:var(--good)}
+</style>
+</head>
+<body data-root="" data-page="tutorial">
+<div class="layout">
+<aside class="side" id="sidebar" aria-label="Documentation"></aside>
+<main class="doc">
+<div class="eyebrow">start/tutorial</div>
+<h1>Tutorial: a <em>coin game</em></h1>
+<p class="lead">Build a small game from an empty place in about 15 minutes. Coins lie around the map, players walk into them, the server checks every pickup, and each player's coins are saved.</p>
+<div class="cta">
+  <a class="btn primary" href="assets/tutorial/CoinGame.rbxl" download>Download the finished game (.rbxl)</a>
+  <a class="btn" href="getting-started.html">Getting started first</a>
+</div>
+<div class="goal">
+  <div><b>2 services</b>PlayerService saves coins, CoinService places them and hands them out.</div>
+  <div><b>2 controllers</b>CoinController asks for coins, HudController shows the count.</div>
+  <div><b>2 events</b>Collect (player → server), Collected (server → everyone).</div>
+</div>
+
+<h2>1. Set up the place</h2>
+<ol>
+  <li>Create a new <b>Baseplate</b> place in Studio.</li>
+  <li>Install the <b>Branch Studio</b> plugin. On its <b>Overview</b> page, press <b>Install</b> (this puts Branch in <code>ReplicatedStorage.Packages</code>) and switch on <b>Compiled networking</b>.</li>
+  <li>Make the folders and start Branch on both sides:</li>
+</ol>
+<pre><code class="plain">ServerScriptService
+├─ Main          (Script)
+└─ Services      (Folder)
+StarterPlayer
+└─ StarterPlayerScripts
+   ├─ Main       (LocalScript)
+   └─ Controllers (Folder)</code></pre>
+<span class="file">ServerScriptService/Main (Script)</span>
+<pre><code>local Branch = require(game:GetService("ReplicatedStorage").Packages.Branch)
+Branch:Start(script.Parent.Services)</code></pre>
+<span class="file">StarterPlayerScripts/Main (LocalScript)</span>
+<pre><code>local Branch = require(game:GetService("ReplicatedStorage").Packages.Branch)
+Branch:Start(script.Parent:WaitForChild("Controllers"))</code></pre>
+
+<h2>2. Save each player's coins</h2>
+<p>Add a ModuleScript <code>PlayerService</code> to <code>Services</code>. Any module whose name ends with <code>Service</code> is started by Branch. Branch Studio fills the new module with a template; replace it with this:</p>
+<span class="file">Services/PlayerService</span>
+<pre><code>local RunService = game:GetService("RunService")
+local Branch = require(game.ReplicatedStorage.Packages.Branch)
+
+local PlayerService = {}
+
+function PlayerService:Init()
+	Branch.Data.Server.Start({
+		Template = { coins = 0 },
+		Mock = RunService:IsStudio(), -- nothing is saved while you test in Studio
+		Leaderstats = { coins = "Coins" }, -- shown on the player list
+	})
+end
+
+return PlayerService</code></pre>
+<ul>
+  <li><strong><code>Template</code></strong> is what a new player starts with. Every later write is checked against it, so <code>coins</code> can never become a string or <code>nil</code>.</li>
+  <li><strong><code>Mock</code></strong> keeps Studio tests from touching real saves.</li>
+  <li><strong><code>Leaderstats</code></strong> shows <code>coins</code> on the player list and keeps it up to date.</li>
+</ul>
+<p class="check"><b>Check:</b> press Play. The player list shows <b>Coins 0</b>.</p>
+
+<h2>3. Put coins on the map</h2>
+<p>Add a second service, <code>CoinService</code>. Start with the part that places the coins:</p>
+<span class="file">Services/CoinService</span>
+<pre><code>local Branch = require(game.ReplicatedStorage.Packages.Branch)
+
+local CoinService = { Dependencies = { "PlayerService" } }
+
+local coins: { [number]: BasePart } = {} -- coin id -&gt; its part
+local nextId = 0
+local folder: Folder
+
+local function spawnCoin()
+	nextId = nextId % 65535 + 1
+	local coin = Instance.new("Part")
+	coin.Name = "Coin"
+	coin.Shape = Enum.PartType.Cylinder
+	coin.Size = Vector3.new(0.4, 3, 3)
+	coin.Color = Color3.fromRGB(255, 200, 40)
+	coin.Material = Enum.Material.Neon
+	coin.Anchored = true
+	coin.CanCollide = false
+	coin.CFrame = CFrame.new(math.random(-40, 40), 2.5, math.random(-40, 40)) * CFrame.Angles(0, 0, math.rad(90))
+	coin:SetAttribute("CoinId", nextId)
+	coin.Parent = folder
+	coins[nextId] = coin
+end
+
+function CoinService:Init()
+	folder = Instance.new("Folder")
+	folder.Name = "Coins"
+	folder.Parent = workspace
+	for _ = 1, 20 do
+		spawnCoin()
+	end
+end
+
+return CoinService</code></pre>
+<ul>
+  <li><strong><code>Dependencies</code></strong> makes <code>PlayerService:Init</code> run first, so player data is ready before any coin can be taken.</li>
+  <li><strong><code>Init</code></strong> runs once, before anything starts: a good place to build the map. Every coin gets an id, so the server and the players can talk about "coin #7".</li>
+</ul>
+<p class="check"><b>Check:</b> press Play. 20 gold coins lie around the map (you cannot pick them up yet).</p>
+
+<h2>4. Let players collect coins</h2>
+<p>Picking up a coin has to go through the server: if a player's own script could add coins, an exploiter could add a million. Declare two events in <code>CoinService</code>, right below the first line <code>local CoinService = ...</code>:</p>
+<pre><code>CoinService.Network = {
+	Collect = { From = "Client", Rate = "10/s", Data = "u16" }, -- a player asks to take coin #id
+	Collected = { From = "Server", Data = "u16" }, -- tells everyone coin #id is gone
+}</code></pre>
+<p>When you stop typing, Branch Studio compiles them into <code>Branch.Network</code>: autocomplete now knows <code>Collect</code> and <code>Collected</code>. Then add the server's side, at the end of <code>CoinService</code> before <code>return</code>:</p>
+<pre><code>function CoinService:Start()
+	local Net = Branch.Network.Server.CoinService
+	local Data = Branch.Data.Server
+
+	Net.Collect.On(function(player, id)
+		-- the server decides: the coin must exist and the player must be next to it
+		local coin = coins[id]
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		if not coin or not root or not Data.IsLoaded(player) then
+			return
+		end
+		if (root.Position - coin.Position).Magnitude &gt; 12 then
+			return -- too far away: a real touch cannot do that
+		end
+
+		coins[id] = nil
+		coin:Destroy()
+		Data.Increment(player, "coins")
+		Net.Collected.FireAll(id)
+		task.delay(3, spawnCoin) -- a new coin somewhere else
+	end)
+end</code></pre>
+<ul>
+  <li><strong><code>Data = "u16"</code></strong>: the coin id travels as a 2-byte number. The server refuses anything else before your code sees it.</li>
+  <li><strong><code>Rate = "10/s"</code></strong>: a player can ask at most 10 times a second; the rest are dropped.</li>
+  <li><strong>The server checks the rest</strong>: the coin exists and the player stands next to it. A cheater asking for a far-away coin gets nothing.</li>
+  <li><strong><code>Data.Increment</code></strong> adds the coin to the saved data, and the player list updates by itself.</li>
+</ul>
+
+<h2>5. Ask for a coin on touch</h2>
+<p>Now the players' side. Add a ModuleScript <code>CoinController</code> to <code>Controllers</code> (modules ending with <code>Controller</code> run on the client):</p>
+<span class="file">Controllers/CoinController</span>
+<pre><code>local Players = game:GetService("Players")
+local Branch = require(game.ReplicatedStorage.Packages.Branch)
+
+local CoinController = {}
+
+function CoinController:Start()
+	local Net = Branch.Network.Client.CoinService
+	local player = Players.LocalPlayer
+	local asked: { [number]: boolean } = {} -- coins we already asked for
+
+	local function watch(coin: BasePart)
+		coin.Touched:Connect(function(hit)
+			local id = coin:GetAttribute("CoinId")
+			local character = player.Character
+			if id and not asked[id] and character and hit:IsDescendantOf(character) then
+				asked[id] = true
+				Net.Collect.Fire(id) -- the server checks it and gives the coin
+			end
+		end)
+	end
+
+	local folder = workspace:WaitForChild("Coins")
+	for _, coin in folder:GetChildren() do
+		watch(coin :: BasePart)
+	end
+	folder.ChildAdded:Connect(watch)
+
+	Net.Collected.On(function(id)
+		asked[id] = nil -- ids are reused later
+	end)
+end
+
+return CoinController</code></pre>
+<p>The client only <em>asks</em>: <code>Net.Collect.Fire(id)</code>. The coin disappears for everyone when the server destroys it, and <code>Collected</code> tells every client that the id is free again.</p>
+
+<h2>6. Show the count</h2>
+<p>Last, a counter at the top of the screen. <code>Branch.Data.Client</code> is a read-only copy of the player's own data, kept in sync by the server:</p>
+<span class="file">Controllers/HudController</span>
+<pre><code>local Players = game:GetService("Players")
+local Branch = require(game.ReplicatedStorage.Packages.Branch)
+
+local HudController = {}
+
+function HudController:Start()
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "Hud"
+	gui.ResetOnSpawn = false
+
+	local label = Instance.new("TextLabel")
+	label.AnchorPoint = Vector2.new(0.5, 0)
+	label.Position = UDim2.new(0.5, 0, 0, 16)
+	label.Size = UDim2.fromOffset(220, 48)
+	label.BackgroundColor3 = Color3.fromRGB(20, 22, 34)
+	label.BackgroundTransparency = 0.2
+	label.TextColor3 = Color3.fromRGB(255, 210, 70)
+	label.Font = Enum.Font.GothamBold
+	label.TextSize = 26
+	label.Text = "Coins: 0"
+	label.Parent = gui
+	Instance.new("UICorner", label)
+
+	gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+	-- runs now and after every change the server makes
+	Branch.Data.Client.Observe("coins", function(coins)
+		label.Text = `Coins: {coins}`
+	end)
+end
+
+return HudController</code></pre>
+<p class="check"><b>Check:</b> press Play and walk into the coins. The counter and the player list go up, and a new coin appears 3 seconds after each pickup.</p>
+
+<h2>7. What you built</h2>
+<ul>
+  <li><strong>Segments</strong> started in the right order, with no wiring: <a href="guide/segments.html">Segments</a>.</li>
+  <li><strong>Saved data</strong> that cannot be corrupted by a wrong write: <a href="guide/data.html">Player data</a>.</li>
+  <li><strong>Networking</strong> that is typed, checked on the server and rate-limited: <a href="guide/network.html">Networking</a>.</li>
+</ul>
+<p>Something does not work? Look up the message on <a href="guide/troubleshooting.html">Common errors</a>, or compare with the <a href="assets/tutorial/CoinGame.rbxl" download>finished place</a>.</p>
+
+<h2>8. Ideas to try next</h2>
+<ul>
+  <li><strong>A sound for nearby players:</strong> add <code>Pickup = { From = "Server", Data = "vector" }</code> and send it with <code>Net.Pickup.FireNear(coin.Position, 60, coin.Position)</code>. <a href="guide/network.html#near">FireNear</a></li>
+  <li><strong>Catch cheaters:</strong> log players whose packets are refused with <a href="api/network.html#onreject"><code>Branch.Network.OnReject</code></a>.</li>
+  <li><strong>A best score:</strong> add <code>best = 0</code> to the template and update it with <code>Data.Update</code>. Old saves get the new field by themselves.</li>
+  <li><strong>Check your traffic:</strong> press <b>Profile</b> on Branch Studio's Network page, play, and see what every event costs. <a href="guide/network.html#see">See the traffic</a></li>
+</ul>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

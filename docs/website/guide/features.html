@@ -29,7 +29,7 @@
 <div class="note"><b>Before you start.</b> Networking features are declared in a service's <code>Network</code> table and compiled by Branch Studio as you type. If you have not declared an event yet, read <a href="network.html">Networking</a> first.</div>
 
 <!-- ───────────────────────── Networking ───────────────────────── -->
-<h2 id="networking">Networking you declare</h2>
+<h2 id="networking">Networking you declare <span class="studio" title="Needs the free Branch Studio plugin">needs Branch Studio</span></h2>
 
 <h3 id="declared">Declared inside your services</h3>
 <ol class="steps">
@@ -83,7 +83,7 @@ return ShopService</code></pre></li>
 </ul>
 
 <!-- ───────────────────────── Send less ───────────────────────── -->
-<h2 id="send-less">Send less</h2>
+<h2 id="send-less">Send less <span class="studio" title="Needs the free Branch Studio plugin">needs Branch Studio</span></h2>
 
 <h3 id="latest">Latest</h3>
 <p>For state that changes all the time (a position, a health bar, an aim direction), only the newest value matters. With <code>Latest</code>, several sends to the same player in one frame become one: the newest.</p>
@@ -233,7 +233,7 @@ Grid = { From = "Server", Pack = true, Data = "u8(0..9)[..1024]" },</code></pre>
 <p class="check"><b>Check:</b> the plugin's <b>Network</b> page shows the event's smaller size, and the live profiler its bytes per second.</p>
 
 <!-- ───────────────────────── Security ───────────────────────── -->
-<h2 id="security">Security</h2>
+<h2 id="security">Security <span class="studio" title="Needs the free Branch Studio plugin">needs Branch Studio</span></h2>
 
 <h3 id="validated">Everything from clients is validated <span class="auto">automatic</span></h3>
 <p>Your declaration is the rulebook. Whatever you declare for a <code>From = "Client"</code> event is enforced on the server before any listener runs: <code>u8</code> can't be 300, <code>string(..32)</code> can't be 10,000 characters, <code>Instance(Tool)</code> can't be a Part, NaN and infinity never get through. The tighter your types, the less an exploiter can send.</p>
@@ -279,7 +279,7 @@ end)</code></pre>
 </ul>
 
 <!-- ───────────────────────── Studio ───────────────────────── -->
-<h2 id="studio">Branch Studio</h2>
+<h2 id="studio">Branch Studio <span class="studio" title="Needs the free Branch Studio plugin">needs Branch Studio</span></h2>
 
 <h3 id="compiler">Live compiler <span class="auto">automatic</span></h3>
 <p>Install Branch Studio and press <b>Install</b> on its <b>Overview</b> page. From then on, whenever you stop typing, it rebuilds typed autocomplete for <code>GetSegment</code> and data paths, and <code>Branch.Network</code>. Everything lands in one undo step: Ctrl+Z undoes a compile. To compile by hand, press <b>Compile</b> on the toolbar; <b>Live</b> turns compiling as you type on and off.</p>
@@ -344,7 +344,7 @@ end)</code></pre>
 },</code></pre>
 <p>If a migration errors, the saved data is untouched and the player is asked to rejoin. Only ever append: never edit or reorder a migration that already shipped.</p>
 
-<h3 id="template-warnings">Template change warnings</h3>
+<h3 id="template-warnings">Template change warnings <span class="studio" title="Needs the free Branch Studio plugin">needs Branch Studio</span></h3>
 <ol class="steps">
   <li>Point <b>Settings → Paths → Data template</b> at your template module.</li>
   <li>When you remove a field or change its type, <b>Problems</b> shows a warning: saved player data will not follow on its own.</li>
@@ -359,7 +359,7 @@ end)</code></pre>
 <pre><code>Data.Observe(player, "stats.kills", function(new, old) end)   -- also fires when the whole "stats" is replaced
 Data.Get(player, "friends.12345")                              -- reaches dictionaries keyed by UserId</code></pre>
 
-<h3 id="datastores">A DataStore browser that protects players</h3>
+<h3 id="datastores">A DataStore browser that protects players <span class="studio" title="Needs the free Branch Studio plugin">needs Branch Studio</span></h3>
 <ol class="steps">
   <li>Open the plugin's <b>DataStores</b> page. Pick a store, then a key.</li>
   <li>Browse freely: live data is <b>read-only</b>. Old versions, the 4 MB size meter and ProfileStore session locks are shown.</li>

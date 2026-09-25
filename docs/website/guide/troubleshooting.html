@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Common errors · Branch</title>
+<meta name="description" content="Every message Branch prints, what it means and how to fix it: segments that do not load, data errors, networking errors and Branch Studio problems.">
+<link rel="icon" href="../assets/mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="../assets/site.css">
+<style>
+.msg{font:500 13.5px/1.55 var(--mono);background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--warn);border-radius:10px;padding:10px 14px;margin:10px 0 12px;overflow-x:auto;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink)}
+.msg.err{border-left-color:#E5484D}
+.fix{color:var(--muted)}
+.fix b{color:var(--ink)}
+</style>
+</head>
+<body data-root="../" data-page="guide/troubleshooting">
+<div class="layout">
+<aside class="side" id="sidebar" aria-label="Documentation"></aside>
+<main class="doc">
+<div class="eyebrow">guide/troubleshooting</div>
+<h1>Common errors</h1>
+<p class="lead">Every message Branch prints, what it means and how to fix it. Search this page with Ctrl+F for a few words of your message, or search the whole site with Ctrl+K.</p>
+<p>Red lines are errors in the Output; yellow ones are warnings. Messages that start with <code>[Branch]</code> come from the loader, which reports the problem and goes on starting everything else.</p>
+
+<h2>A segment does not start</h2>
+
+<h3>My service or controller never runs</h3>
+<p>No message at all usually means Branch never saw the module as a segment.</p>
+<ul class="fix">
+  <li><b>Check the name.</b> With the default rule, only modules whose name ends with <code>Service</code> (server) or <code>Controller</code> (client) are segments. <code>ShopManager</code> is a helper, not a segment. Branch Studio warns about it: <em>ShopManager has Init/Start but is not loaded</em>.</li>
+  <li><b>Check where it is.</b> It must be under a folder you pass to <code>Branch:Start</code> (usually <code>ServerScriptService.Services</code> and <code>StarterPlayerScripts.Controllers</code>).</li>
+  <li><b>Check that Branch starts.</b> A <code>Script</code> must call <code>Branch:Start(...)</code> on the server, and a <code>LocalScript</code> on the client. See <a href="../getting-started.html">Getting started</a>.</li>
+</ul>
+
+<h3>… failed to load: …</h3>
+<div class="msg err">[Branch] ServerScriptService.Services.ShopService failed to load: &lt;the real error&gt;</div>
+<p class="fix">The module errored while it was being required, before <code>Init</code>. The rest of the line is the real error. <b>Fix that error</b>; the segment is skipped until then.</p>
+
+<h3>… must return a table</h3>
+<div class="msg err">[Branch] ServerScriptService.Services.ShopService must return a table (got nil); skipped</div>
+<p class="fix">A segment is a table of functions. <b>End the module with <code>return ShopService</code></b>.</p>
+
+<h3>…:Init failed</h3>
+<div class="msg err">[Branch] ShopService:Init failed: &lt;the real error&gt;</div>
+<p class="fix">Its <code>Init</code> errored, so it is marked <code>Failed</code>: it does not start and its hooks are not connected. Segments that depend on it still start, with a warning: <em>CoinService depends on ShopService, whose Init failed</em>. <b>Fix the first error</b>; the others usually go away with it.</p>
+
+<h3>… is still running after 5 s</h3>
+<div class="msg">[Branch] ShopService:Init is still running after 5 s; every segment after it is waiting (a WaitForChild or DataStore call that never returns?)</div>
+<p class="fix"><code>Init</code> runs one segment at a time, so a slow one holds up everything after it. <b>Look for a <code>WaitForChild</code> on something that never appears</b>, or a web or DataStore call. Move waiting into <code>Start</code>, which runs in its own thread.</p>
+
+<h3>segment "…" not found</h3>
+<div class="msg err">Branch: segment "PlayerService" not found (phase Loading). Look segments up in :Init() or later, not at module top level.</div>
+<p class="fix"><code>GetSegment</code> was called while modules were still loading, or with a name that is not a segment. <b>Move the call into <code>Init</code> or <code>Start</code></b>, and check the spelling.</p>
+
+<h3>dependency cycle / depends on …</h3>
+<div class="msg err">[Branch] dependency cycle: ShopService -&gt; CoinService -&gt; ShopService</div>
+<p class="fix">Two segments list each other in <code>Dependencies</code>, so neither can <code>Init</code> first. <b>Remove one of the two</b>: usually one only needs the other in <code>Start</code>, which always runs after every <code>Init</code>. A name in <code>Dependencies</code> that is not a segment is reported too: <em>ShopService depends on "CoinServce", which is not a segment</em>.</p>
+
+<h3>two segments are named …</h3>
+<div class="msg err">[Branch] two segments are named "ShopService": ServerScriptService.Services.ShopService and ServerScriptService.Services.Old.ShopService; the second was skipped</div>
+<p class="fix">Segment names must be unique on each side; the second one is skipped. <b>Rename or delete one</b>.</p>
+
+<h3>…:Heartbeat errored</h3>
+<div class="msg err">[Branch] ShopService:Heartbeat errored: &lt;the real error&gt;</div>
+<p class="fix">A hook errored. The other segments' hooks keep running, and the message repeats at most once every 5 seconds. <b>Fix the error in that hook</b>.</p>
+
+<h3>Branch.… does not exist</h3>
+<div class="msg err">Branch.Netwrok does not exist</div>
+<p class="fix">A typo on <code>Branch</code>. The fields are <code>Network</code> and <code>Data</code>; utilities are modules: <code>require(Packages.Branch.Util.Timer)</code>.</p>
+
+<h3>Branch:Start can only be called once</h3>
+<div class="msg err">Branch:Start can only be called once</div>
+<p class="fix">Two scripts start Branch on the same side. <b>Keep one</b>, and pass every root folder to it: <code>Branch:Start(folderA, folderB)</code>.</p>
+
+<h2>Player data</h2>
+
+<h3>… before their data loaded</h3>
+<div class="msg err">Branch.Data: Set for Player1 before their data loaded; use Data.Await(player) or Data.OnLoaded</div>
+<p class="fix">Data loads a moment after a player joins. <b>Write in <code>Data.OnLoaded(function(player, data) ... end)</code></b>, or call <code>Data.Await(player)</code> first. Reads before that return <code>nil</code>.</p>
+
+<h3>"…" holds a … in the template, got …</h3>
+<div class="msg err">Branch.Data: "stats.kills" holds a number in the template, got string</div>
+<p class="fix">Every write is checked against your template. <b>Write the type the template has</b>, or change the template (and add a <a href="data.html#migrations">migration</a> for saves that already exist). Related: <em>"…" is missing (the template has it)</em> when a table you set lacks a key, and <em>"…" is part of the template and cannot be set to nil</em>.</p>
+
+<h3>"…" cannot hold nan (DataStores cannot save NaN or infinity)</h3>
+<div class="msg err">Branch.Data: "ratio" cannot hold nan (DataStores cannot save NaN or infinity)</div>
+<p class="fix">Usually a division by zero, such as <code>kills / deaths</code> with 0 deaths. One NaN would make every later save of that profile fail, so it is refused here. <b>Guard the division</b>: <code>if deaths &gt; 0 then ... end</code>.</p>
+
+<h3>cannot Increment "…"</h3>
+<div class="msg err">Branch.Data: cannot Increment "stats" (table)</div>
+<p class="fix"><code>Increment</code> only works on numbers. <b>Point it at a number</b>: <code>"stats.kills"</code>, not <code>"stats"</code>.</p>
+
+<h3>the client is still waiting for its data after 15 s</h3>
+<div class="msg">[Branch.Data] the client is still waiting for its data after 15 s; is Branch.Data.Server.Start called on the server?</div>
+<p class="fix">A client uses <code>Branch.Data.Client</code>, but the server never started data. <b>Call <code>Branch.Data.Server.Start({...})</code></b> in a service's <code>Init</code>.</p>
+
+<h3>My data is not saved in Studio</h3>
+<div class="msg">[ProfileStore]: Roblox API services unavailable - data will not be saved</div>
+<p class="fix">Studio has no DataStore access for this place. Either <b>pass <code>Mock = RunService:IsStudio()</code></b> to <code>Data.Start</code> (nothing is saved while testing, on purpose), or publish the place and turn on <b>Game Settings → Security → Enable Studio Access to API Services</b>.</p>
+
+<h2>Networking</h2>
+
+<h3>Branch.Network is not compiled</h3>
+<div class="msg err">Branch.Network is not compiled: turn on Network in Branch Studio and declare Service.Network tables</div>
+<p class="fix"><code>Branch.Network</code> is written by the Branch Studio plugin. <b>Install Branch Studio, turn on Compiled networking</b> on its Overview page, and declare a <code>Network</code> table in a service.</p>
+
+<h3>Branch.Network.Server is only available on the server</h3>
+<div class="msg err">Branch.Network.Server is only available on the server</div>
+<p class="fix">A LocalScript or controller used <code>Branch.Network.Server</code>. <b>Use <code>Branch.Network.Client</code> on the client</b>, and <code>Server</code> in services. The same goes the other way round, and for <code>OnReject</code> (server only).</p>
+
+<h3>My event is not in Branch.Network</h3>
+<ul class="fix">
+  <li><b>Is it declared in a service?</b> Only server segments declare <code>Network</code>. A controller that declares one gets the problem <em>only server segments (services) declare Network</em>.</li>
+  <li><b>Is the service under a root Branch Studio reads?</b> See <b>Settings → Paths</b>.</li>
+  <li><b>Does the declaration have a problem?</b> Open Branch Studio's <b>Overview</b> page: while a declaration has an error, the last working <code>Branch.Network</code> stays, without your new event.</li>
+</ul>
+
+<h3>… expected …, got …</h3>
+<div class="msg err">Branch.Network: Combat.Damage.Fire #1 expected u8, got number (300)</div>
+<p class="fix">An argument does not match the declaration: here, 300 does not fit in a <code>u8</code>. <b>Send what the declaration says</b>, or change the type. These checks run in Studio; the rest of the frame is sent normally.</p>
+
+<h3>… failed on the server</h3>
+<div class="msg err">Branch.Network: Shop.Buy failed on the server</div>
+<p class="fix"><code>Invoke</code> errors on the client when the server could not answer: the handler errored (the server's Output has <em>Shop.Buy handler errored: …</em>), it returned values that do not match <code>Return</code>, it went over its <code>Rate</code>, or no handler was set before the queue filled up. <b>Look at the server's Output</b> for the reason, and wrap the call in <code>pcall</code> where a failure is possible.</p>
+
+<h3>rejected a packet from …</h3>
+<div class="msg">Branch.Network rejected a packet from Player1: &lt;reason&gt;</div>
+<p class="fix">A client sent data that does not match the declarations: a wrong size, a value out of range, a NaN, a wrong Instance class. The packet was dropped. From a normal client this does not happen, so it is <b>usually an exploiter</b>: handle it in <code>Branch.Network.OnReject</code>. A reason starting with <code>rate limit:</code> means the client went over the event's <code>Rate</code>.</p>
+
+<h3>A listener never gets called</h3>
+<ul class="fix">
+  <li><b>Is it connected on the right side?</b> A <code>From = "Client"</code> event is heard with <code>.On</code> on the server, and the other way round.</li>
+  <li><b>Is it <code>Latest</code>, <code>Hz</code> or <code>Lod</code>?</b> Those send at the end of the frame, and <code>Lod</code>'s <code>FireFrom</code> skips players beyond the last ring and players without a character.</li>
+  <li><b>Is it <code>Unreliable</code>?</b> Unreliable events can be lost, especially in the first seconds after a player joins.</li>
+</ul>
+
+<h2>Branch Studio</h2>
+
+<h3>… has Init/Start but is not loaded</h3>
+<div class="msg">ShopManager has Init/Start but is not loaded: segment names end with Service (Settings &gt; Segment rule)</div>
+<p class="fix">See <a href="#my-service-or-controller-never-runs">My service or controller never runs</a>. <b>Rename it to end with Service or Controller</b>, or switch the segment rule to <code>Folders</code>.</p>
+
+<h3>Enum(…) is not an Enum / Instance(…) is not a known class</h3>
+<div class="msg err">Combat.Hit: Enum(KeyCodes) is not an Enum</div>
+<p class="fix">A typo in an engine name inside a type. <b>Fix the spelling</b>: <code>Enum(KeyCode)</code>, <code>Instance(Model)</code>. A wrong Enum stops the network from compiling; an unknown class compiles, but the server would refuse every packet.</p>
+
+<h3>unknown option "…" (did you mean …?)</h3>
+<div class="msg err">Combat.Hit: unknown option "Tpye" (did you mean "Type"?)</div>
+<p class="fix">A typo in an event option. The full list is in <a href="network.html#options">Networking → Options</a>. Other declaration errors (such as <em>Delta needs a Reliable event</em>) say what to change in the same way.</p>
+
+<h3>Data template changed</h3>
+<div class="msg">Data template changed: removed "stats.best". Saved player data keeps the old shape, so add a migration …</div>
+<p class="fix">Saved data does not follow a template change on its own. <b>Write a <a href="data.html#migrations">migration</a></b>, then click the warning to accept the new shape.</p>
+
+<h3>Nothing compiles when I type</h3>
+<ul class="fix">
+  <li><b>Is Live on?</b> The <b>Live</b> button on the Branch toolbar turns compiling as you type on and off; <b>Compile</b> compiles now.</li>
+  <li><b>Is the runtime installed?</b> The Overview page shows it; press <b>Install</b> or <b>Update</b>.</li>
+  <li><b>Is Studio in Play?</b> The plugin does not compile during Play.</li>
+</ul>
+</main>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

@@ -198,6 +198,46 @@ local ok = Net.Buy.Invoke("sword")                -- yields for the answer</code
 </ul>
 
 <h2>How it travels</h2>
+<figure class="diagram" aria-label="One frame of networking: your Fire calls go into a buffer per player, the frame is sent in one remote call, the other side checks it and calls your listeners">
+<svg viewBox="0 0 760 210" role="img" font-family="Figtree, sans-serif">
+  <title>One frame of Branch.Network</title>
+  <defs><linearGradient id="ng" gradientUnits="userSpaceOnUse" x1="236" y1="0" x2="600" y2="0"><stop offset="0" stop-color="var(--violet)"/><stop offset="1" stop-color="var(--cyan)"/></linearGradient>
+  <marker id="na" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="var(--faint)"/></marker></defs>
+  <g font-size="12" font-family="JetBrains Mono, monospace" fill="var(--ink)">
+    <rect x="20" y="40" width="150" height="24" rx="6" fill="var(--raise)" stroke="var(--line)"/><text x="30" y="56">Damage.Fire(p, 25)</text>
+    <rect x="20" y="70" width="150" height="24" rx="6" fill="var(--raise)" stroke="var(--line)"/><text x="30" y="86">Move.Fire(p, pos)</text>
+    <rect x="20" y="100" width="150" height="24" rx="6" fill="var(--raise)" stroke="var(--line)"/><text x="30" y="116">Damage.Fire(p, 9)</text>
+  </g>
+  <text x="95" y="24" text-anchor="middle" font-size="14" font-weight="700" fill="var(--ink)">Your code</text>
+  <text x="95" y="150" text-anchor="middle" font-size="12.5" fill="var(--muted)">during the frame</text>
+  <g stroke="var(--faint)" stroke-width="1.6" marker-end="url(#na)"><line x1="176" y1="52" x2="230" y2="72"/><line x1="176" y1="82" x2="230" y2="82"/><line x1="176" y1="112" x2="230" y2="92"/></g>
+  <rect x="236" y="56" width="150" height="52" rx="8" fill="var(--surface)" stroke="url(#ng)" stroke-width="2"/>
+  <text x="311" y="78" text-anchor="middle" font-size="13" font-weight="700" fill="var(--ink)">one buffer</text>
+  <text x="311" y="96" text-anchor="middle" font-size="12" fill="var(--muted)">per player, in order</text>
+  <text x="311" y="24" text-anchor="middle" font-size="14" font-weight="700" fill="var(--ink)">Written as bytes</text>
+  <text x="311" y="130" text-anchor="middle" font-size="12.5" fill="var(--muted)">booleans as bits,</text>
+  <text x="311" y="146" text-anchor="middle" font-size="12.5" fill="var(--muted)">repeats without ids</text>
+  <line x1="392" y1="82" x2="468" y2="82" stroke="url(#ng)" stroke-width="3" marker-end="url(#na)"/>
+  <text x="430" y="70" text-anchor="middle" font-size="12" fill="var(--muted)">end of frame</text>
+  <text x="430" y="104" text-anchor="middle" font-size="12" fill="var(--muted)">1 remote call</text>
+  <rect x="474" y="56" width="120" height="52" rx="8" fill="var(--surface)" stroke="var(--line)"/>
+  <text x="534" y="78" text-anchor="middle" font-size="13" font-weight="700" fill="var(--ink)">checks</text>
+  <text x="534" y="96" text-anchor="middle" font-size="12" fill="var(--muted)">on the server</text>
+  <text x="534" y="24" text-anchor="middle" font-size="14" font-weight="700" fill="var(--ink)">The other side</text>
+  <text x="534" y="130" text-anchor="middle" font-size="12.5" fill="var(--muted)">bad packets go to</text>
+  <text x="534" y="146" text-anchor="middle" font-size="12.5" fill="var(--muted)">OnReject</text>
+  <g stroke="var(--faint)" stroke-width="1.6" marker-end="url(#na)"><line x1="600" y1="72" x2="640" y2="52"/><line x1="600" y1="82" x2="640" y2="82"/><line x1="600" y1="92" x2="640" y2="112"/></g>
+  <g font-size="12" font-family="JetBrains Mono, monospace" fill="var(--ink)">
+    <rect x="646" y="40" width="96" height="24" rx="6" fill="var(--raise)" stroke="var(--line)"/><text x="656" y="56">Damage.On</text>
+    <rect x="646" y="70" width="96" height="24" rx="6" fill="var(--raise)" stroke="var(--line)"/><text x="656" y="86">Move.On</text>
+    <rect x="646" y="100" width="96" height="24" rx="6" fill="var(--raise)" stroke="var(--line)"/><text x="656" y="116">Damage.On</text>
+  </g>
+  <text x="694" y="150" text-anchor="middle" font-size="12.5" fill="var(--muted)">same order</text>
+  <line x1="20" y1="180" x2="742" y2="180" stroke="var(--line)" stroke-width="1"/>
+  <text x="20" y="200" font-size="12.5" fill="var(--muted)">FireAll: written once for everyone, sent with one FireAllClients.  Functions (Invoke): sent at once, not at the end of the frame.</text>
+</svg>
+<figcaption>Everything you fire for a player in one frame leaves as one remote call, and arrives in the order you fired it.</figcaption>
+</figure>
 <ul>
   <li><strong>Batched per frame.</strong> Everything you fire for a player in one frame leaves as one remote call. <code>FireAll</code> goes out once, through <code>FireAllClients</code>.</li>
   <li><strong>Exact order.</strong> Each player receives events in the order they were fired, even when <code>Fire</code>, <code>FireAll</code> and <code>FireList</code> are mixed.</li>

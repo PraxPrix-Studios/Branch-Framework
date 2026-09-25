@@ -38,6 +38,41 @@ Branch:Start(script.Parent.Services, { SegmentRule = "Folders" })  -- explicit</
   <li><strong>Start.</strong> After every <code>Init</code> has finished, each segment's <code>Start</code> runs in its own thread, so a <code>Start</code> that loops forever does not block the others.</li>
   <li><strong>Hooks.</strong> Player and frame hooks are connected.</li>
 </ol>
+<figure class="diagram" aria-label="The lifecycle: load, Init one by one, Start all at once, then hooks">
+<svg viewBox="0 0 760 230" role="img" font-family="Figtree, sans-serif">
+  <title>Branch lifecycle</title>
+  <line x1="40" y1="60" x2="720" y2="60" stroke="var(--line)" stroke-width="3" stroke-linecap="round"/>
+  <line x1="40" y1="60" x2="720" y2="60" stroke="url(#lg)" stroke-width="3" stroke-linecap="round"/>
+  <defs><linearGradient id="lg" gradientUnits="userSpaceOnUse" x1="40" y1="0" x2="720" y2="0"><stop offset="0" stop-color="var(--violet)"/><stop offset="1" stop-color="var(--cyan)"/></linearGradient></defs>
+  <g font-size="15" font-weight="700" fill="var(--ink)" text-anchor="middle">
+    <circle cx="80" cy="60" r="10" fill="var(--violet)"/><text x="80" y="30">1. Load</text>
+    <circle cx="270" cy="60" r="10" fill="var(--violet)"/><text x="270" y="30">2. Init</text>
+    <circle cx="470" cy="60" r="10" fill="var(--cyan)"/><text x="470" y="30">3. Start</text>
+    <circle cx="660" cy="60" r="10" fill="var(--cyan)"/><text x="660" y="30">4. Hooks</text>
+  </g>
+  <g font-size="12.5" fill="var(--muted)" text-anchor="middle">
+    <text x="80" y="92">every segment</text><text x="80" y="108">is required</text>
+    <text x="270" y="92">one at a time,</text><text x="270" y="108">in Dependencies order</text>
+    <text x="470" y="92">all at once, each</text><text x="470" y="108">in its own thread</text>
+    <text x="660" y="92">PlayerAdded, Heartbeat,</text><text x="660" y="108">PreRender…</text>
+  </g>
+  <!-- Init: sequential boxes -->
+  <g font-size="12" font-family="JetBrains Mono, monospace" fill="var(--ink)">
+    <rect x="200" y="132" width="140" height="24" rx="6" fill="var(--raise)" stroke="var(--line)"/><text x="212" y="148">PlayerService</text>
+    <rect x="200" y="162" width="140" height="24" rx="6" fill="var(--raise)" stroke="var(--line)"/><text x="212" y="178">ShopService</text>
+    <rect x="200" y="192" width="140" height="24" rx="6" fill="var(--raise)" stroke="var(--line)"/><text x="212" y="208">CoinService</text>
+  </g>
+  <g stroke="var(--violet)" stroke-width="2" fill="none"><line x1="190" y1="144" x2="190" y2="204"/><path d="M185 198 190 205 195 198"/></g>
+  <!-- Start: parallel boxes -->
+  <g font-size="12" font-family="JetBrains Mono, monospace" fill="var(--ink)">
+    <rect x="400" y="132" width="140" height="24" rx="6" fill="var(--raise)" stroke="var(--line)"/><text x="412" y="148">PlayerService</text>
+    <rect x="400" y="162" width="140" height="24" rx="6" fill="var(--raise)" stroke="var(--line)"/><text x="412" y="178">ShopService</text>
+    <rect x="400" y="192" width="140" height="24" rx="6" fill="var(--raise)" stroke="var(--line)"/><text x="412" y="208">CoinService</text>
+  </g>
+  <g stroke="var(--cyan)" stroke-width="2"><line x1="390" y1="144" x2="398" y2="144"/><line x1="390" y1="174" x2="398" y2="174"/><line x1="390" y1="204" x2="398" y2="204"/><line x1="390" y1="144" x2="390" y2="204"/></g>
+</svg>
+<figcaption><code>Init</code> is where segments set up what others need, so they run one by one; <code>Start</code> may loop or wait, so every one gets its own thread.</figcaption>
+</figure>
 <pre><code>local ShopService = { Dependencies = { "PlayerService" } } -- Init runs after PlayerService:Init
 
 function ShopService:Init() end                 -- sequential, dependency-ordered, may yield
