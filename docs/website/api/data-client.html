@@ -17,6 +17,23 @@
 <div class="eyebrow">api/data-client</div>
 <h1>Branch.<wbr>Data.<wbr>Client</h1>
 <p class="lead">A read-only mirror of the local player's data. It starts syncing as soon as it is required; there is nothing to start. Only the server writes.</p>
+<h2 id="at-a-glance">At a glance</h2>
+<pre><code>local Data = Branch.Data.Client                -- starts syncing when required: nothing to start
+
+Data.Get("coins")                             -- nil until loaded
+Data.Observe("coins", function(new, old) end) -- now, and after every change the server makes
+Data.OnInserted("items", function(index, item) end)
+Data.OnRemoved("items", function(index, item) end)
+Data.Await()                                  -- yields until the data arrives
+Data.IsLoaded()                               -- without waiting
+Data.OnLoaded(function(data) end)</code></pre>
+<ul class="glance-notes">
+  <li><strong>Read-only:</strong> only the server writes. Ask the server with a network event.</li>
+  <li><strong>Only the local player</strong>: the client never sees anyone else's data.</li>
+  <li><strong>No <code>Data.Start</code> on the server?</strong> The client warns after 15 seconds instead of waiting silently.</li>
+</ul>
+<p class="glance-more">Every function in detail:</p>
+
 <pre><code>local Data = Branch.Data.Client</code></pre>
 <p>If the server has not called <code>Branch.Data.Server.Start</code>, the client warns after 15 seconds.</p>
 

@@ -17,6 +17,31 @@
 <div class="eyebrow">api/util</div>
 <h1>Utilities</h1>
 <p class="lead">Three small modules ship inside the package. They are ModuleScripts, not fields of <code>Branch</code>, so require them directly:</p>
+<h2 id="at-a-glance">At a glance</h2>
+<pre><code>local Util = game.ReplicatedStorage.Packages.Branch.Util
+
+local Scythe = require(Util.Scythe)           -- cleanup scopes
+local scope = Scythe.scope()
+Scythe.add(scope, part.Touched:Connect(fn))   -- anything with a way to clean it up
+Scythe.clean(scope)                           -- clean everything, keep the scope
+Scythe.destroy(scope)                         -- clean and throw the scope away
+
+local ThreadReaper = require(Util.ThreadReaper) -- pooled threads
+ThreadReaper.Spawn(fn, ...)                   -- now, in a reused thread
+ThreadReaper.Delay(2, fn, ...)                -- later; returns a token
+ThreadReaper.Cancel(token)                    -- stop a Delay before it runs
+
+local Timer = require(Util.Timer)             -- countdowns
+local timer = Timer.new(10)
+timer:OnFinished(function(state, seconds) end)
+timer:Start() ; timer:Pause() ; timer:Stop()  -- Start again resumes where Pause left off
+timer:Wait()                                  -- yields until it ends: "Finished" or "Stopped"</code></pre>
+<ul class="glance-notes">
+  <li><strong>Modules, not fields:</strong> require them from <code>Packages.Branch.Util</code>; <code>Branch.Util</code> errors.</li>
+  <li><strong>Scythe</strong> is by checcerr and fridayqx (MPL-2.0), <strong>ThreadReaper</strong> by divine.no.</li>
+</ul>
+<p class="glance-more">Every function in detail:</p>
+
 <pre><code>local Util = game.ReplicatedStorage.Packages.Branch.Util
 local Scythe = require(Util.Scythe)
 local ThreadReaper = require(Util.ThreadReaper)

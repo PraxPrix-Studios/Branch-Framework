@@ -229,3 +229,10 @@ td code{white-space:nowrap}
 .diagram{margin:18px 0 22px;padding:14px;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow-x:auto}
 .diagram svg{display:block;width:100%;min-width:560px;height:auto}
 .diagram figcaption{margin-top:8px;color:var(--muted);font-size:14px}
+
+/* API pages: "At a glance" */
+.glance-notes{list-style:none;padding:0;margin:4px 0 0;display:grid;gap:6px}
+.glance-notes li{position:relative;padding-left:18px;color:var(--muted);font-size:15px;max-width:none}
+.glance-notes li::before{content:"";position:absolute;left:2px;top:.62em;width:7px;height:7px;border-radius:50%;background:var(--cyan)}
+.glance-notes strong{color:var(--ink)}
+.glance-more{margin:34px 0 0;padding-top:16px;border-top:1px solid var(--line);font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}

@@ -17,6 +17,30 @@
 <div class="eyebrow">api/network</div>
 <h1>Branch.<wbr>Network</h1>
 <p class="lead">The code Branch Studio generates from your <code>Service.Network</code> declarations. Every event and function gets its own typed functions, so autocomplete shows the exact arguments.</p>
+<h2 id="at-a-glance">At a glance</h2>
+<pre><code>-- server: Branch.Network.Server.&lt;Service&gt;.&lt;Event&gt;
+Net.Damage.Fire(player, 25)                   -- one player
+Net.Damage.FireAll(25)                        -- everyone, sent once
+Net.Damage.FireList({ a, b }, 25)             -- a list of players
+Net.Damage.FireExcept(player, 25)             -- everyone but one
+Net.Damage.FireNear(position, 100, 25)        -- players within 100 studs
+Net.Mob.FireFrom(position, mob)               -- Lod events: rate by distance
+Net.Unit.Forget(id)                           -- Delta + Key: drop an object's state
+Net.Hit.On(function(player, hit) end)         -- a client's event, already validated
+Net.Buy.On(function(player, item) return true end) -- a function's one handler
+Branch.Network.OnReject(function(player, reason) end) -- refused packets, rate limits
+
+-- client: Branch.Network.Client.&lt;Service&gt;.&lt;Event&gt;
+Net.Hit.Fire({ Target = model })              -- to the server, batched per frame
+Net.Damage.On(function(amount) end)           -- returns a function that disconnects
+local ok = Net.Buy.Invoke("sword")            -- yields for the answer; errors if it failed</code></pre>
+<ul class="glance-notes">
+  <li><strong>Batched per frame:</strong> everything you fire for a player in one frame leaves as one remote call, in order.</li>
+  <li><strong>Server-side checks</strong> run before any listener sees a client's data; bad packets go to <code>OnReject</code>.</li>
+  <li><strong>Declared, not called:</strong> the events come from <code>Service.Network</code> tables. Options such as <code>Latest</code>, <code>Hz</code> or <code>Delta</code> are in the <a href="../guide/network.html#options">Networking guide</a>.</li>
+</ul>
+<p class="glance-more">Every function in detail:</p>
+
 <pre><code>Branch.Network.Server.&lt;Service&gt;.&lt;Event&gt;   -- on the server
 Branch.Network.Client.&lt;Service&gt;.&lt;Event&gt;   -- on a client
 Branch.Network.OnReject                    -- on the server</code></pre>

@@ -86,100 +86,24 @@ return ShopService</code></pre></li>
 <h2 id="send-less">Send less <span class="studio" title="Needs the free Branch Studio plugin">needs Branch Studio</span></h2>
 
 <h3 id="latest">Latest</h3>
-<p>For state that changes all the time (a position, a health bar, an aim direction), only the newest value matters. With <code>Latest</code>, several sends to the same player in one frame become one: the newest.</p>
-<ol class="steps">
-  <li>Add <code>Latest = true</code> to the event:
-<pre><code>Position = { From = "Server", Type = "Unreliable", Latest = true, Data = "vector" },</code></pre></li>
-  <li>Fire it as usual, as often as your code wants to. You do not need to track "did I already send this frame":
-<pre><code>-- server: called from several systems in the same frame
-Net.Position.Fire(player, walkTarget)
-Net.Position.Fire(player, knockbackTarget)   -- only this one is sent</code></pre></li>
-  <li>The client listens normally: <code>Net.Position.On(function(pos) ... end)</code>.</li>
-</ol>
-<ul>
-  <li><strong>"Newest" is per player.</strong> A <code>FireAll</code> replaces earlier single sends of that frame; a <code>Fire</code> to one player after a <code>FireAll</code> also reaches that player.</li>
-  <li><strong>And per object.</strong> On a <a href="#delta">Delta</a> event with a <code>Key</code>, every key keeps its own newest value: fire 50 units in a frame and all 50 arrive.</li>
-  <li><strong>Reuse your table.</strong> A struct you pass is copied, so you may fill the same table again for the next object.</li>
-  <li><strong>Sent at the end of the frame</strong>, after the frame's other events. Don't use it for an event whose order relative to other events matters.</li>
-  <li><strong>Works both ways</strong> (server → client and client → server), but not on functions: every call needs its own answer.</li>
-</ul>
-<p class="check"><b>Check:</b> in the live profiler (Play in Studio), the event's sends per second stop growing past your frame rate.</p>
+<p>Several sends to one player in a frame become one: the newest. With a <code>Key</code>, the newest per object.</p>
+<pre><code>Pos = { From = "Server", Latest = true, Data = "vector" },</code></pre>
+<p class="check"><b>How to use it:</b> <a href="network.html#latest">Networking &rarr; Latest</a></p>
 
 <h3 id="hz">Hz</h3>
-<p>Plenty of events are fired every frame (a stamina bar, an aim direction, a boss's health) but nobody needs them 60 times a second. <code>Hz</code> sends the newest value a fixed number of times a second.</p>
-<ol class="steps">
-  <li>Add <code>Hz</code> with the sends per second you want (up to 60):
-<pre><code>Stamina = { From = "Server", Hz = 10, Data = "u8" },
-Aim     = { From = "Client", Hz = 20, Type = "Unreliable", Data = "vector" },</code></pre></li>
-  <li>Keep firing it as before, even every frame. Nothing else changes: <code>Hz</code> includes <code>Latest</code>, so only the newest value is kept between sends.</li>
-</ol>
-<ul>
-  <li><strong>The last value always arrives.</strong> If you stop firing, the newest value still goes out at the next send.</li>
-  <li><strong>No delay after a pause.</strong> When the event was quiet, a new value goes out at once.</li>
-  <li><strong>How to pick the number:</strong> 10 is plenty for bars and counters, 20-30 for things that move. Fractions work: <code>Hz = 0.5</code> is once every two seconds.</li>
-</ul>
-<p class="check"><b>Check:</b> the live profiler shows the event at about that many sends a second.</p>
+<p>Fire as often as you like; the newest value goes out that many times a second, and the last one is never lost.</p>
+<pre><code>Stamina = { From = "Server", Hz = 10, Data = "u8" },</code></pre>
+<p class="check"><b>How to use it:</b> <a href="network.html#hz">Networking &rarr; Hz</a></p>
 
 <h3 id="lod">Lod</h3>
-<p>Things in the world (mobs, cars, other players' effects) should update smoothly for players next to them, and only now and then for players far away. <code>Lod</code> sets how often, by distance.</p>
-<ol class="steps">
-  <li>Add <code>Lod</code>: a list of <code>{ studs, sends per second }</code> rings, near to far:
-<pre><code>Mob = { From = "Server", Delta = true, Key = "id", Lod = { { 50, 30 }, { 200, 5 } }, Data = { id = "u16", pos = "vector", hp = "u8" } },</code></pre>
-  Here: within 50 studs, 30 times a second; within 200 studs, 5 times a second; further away, not at all.</li>
-  <li>Send with <code>FireFrom</code>, from where the thing is:
-<pre><code>RunService.Heartbeat:Connect(function()
-	for id, mob in mobs do
-		Net.Mob.FireFrom(mob.Position, { id = id, pos = mob.Position, hp = mob.Hp })
-	end
-end)</code></pre></li>
-  <li>The client listens as usual. A far player sees the mob jump to where it is now when their ring's turn comes.</li>
-</ol>
-<ul>
-  <li><strong>Distance</strong> is from <code>position</code> to each player's <code>Character.PrimaryPart</code>. Players without a character get nothing from <code>FireFrom</code>.</li>
-  <li><strong>Combine it</strong> with <a href="#delta">Delta</a> and a <code>Key</code> (only changed fields, one state per mob), as above: this is the cheapest way to replicate many moving things.</li>
-  <li><strong>Other sends ignore distance.</strong> <code>Fire</code>, <code>FireAll</code> and the rest still work on a Lod event.</li>
-  <li><strong>Server → client only.</strong></li>
-</ul>
-<p class="check"><b>Check:</b> with two test players (<b>Test → Clients and Servers</b>), walk one far away: its listener is called less and less often, then stops.</p>
+<p><code>FireFrom(position, ...)</code> sends near players often, far players rarely, and nobody beyond the last ring.</p>
+<pre><code>Mob = { From = "Server", Lod = { { 50, 30 }, { 200, 5 } }, Data = { id = "u16", pos = "vector" } },</code></pre>
+<p class="check"><b>How to use it:</b> <a href="network.html#lod">Networking &rarr; Lod</a></p>
 
 <h3 id="delta">Delta</h3>
-<p>The first send carries the whole struct. After that, only the fields that changed since the last send to that player travel. A character standing still costs almost nothing.</p>
-<ol class="steps">
-  <li>The event must be <b>Reliable</b> (the default) and its <code>Data</code> must be a struct. Add <code>Delta = true</code>:
-<pre><code>Stats = { From = "Server", Delta = true, Data = { hp = "u8", mana = "u8", stunned = "boolean", zone = "string(..24)" } },</code></pre></li>
-  <li>Fire the full struct every time. Branch works out what changed:
-<pre><code>-- server, e.g. in Heartbeat
-Net.Stats.Fire(player, { hp = hum.Health, mana = mana, stunned = stunned, zone = zoneName })</code></pre></li>
-  <li>The client always receives the full struct, with unchanged fields filled in for you:
-<pre><code>Net.Stats.On(function(s)
-	healthBar.Size = UDim2.fromScale(s.hp / 100, 1)
-end)</code></pre></li>
-</ol>
-<h4>Many objects in one event: <code>Key</code></h4>
-<p>To send many units, projectiles or doors through one event, name the field that tells them apart. Each key keeps its own state:</p>
-<pre><code>Unit = { From = "Server", Delta = true, Key = "id", Data = { id = "u16", pos = "vector", hp = "u8", stunned = "boolean" } },</code></pre>
-<pre><code>-- server
-for id, unit in units do
-	Net.Unit.FireAll({ id = id, pos = unit.Position, hp = unit.Hp, stunned = unit.Stunned })
-end
-
--- when a unit dies: drop its state on both sides
-Net.Unit.Forget(id)
-
--- client
-Net.Unit.On(function(u)
-	local model = models[u.id]
-	model:PivotTo(CFrame.new(u.pos))
-end)</code></pre>
-<ul>
-  <li><strong>Always call <code>Forget(key)</code></strong> when an object is gone, or both sides keep its state in memory. The next send for that key goes out in full. Without <code>Key</code>, <code>Forget()</code> makes the next send to every player full.</li>
-  <li><strong>The key</strong> must be a plain value (a number, string, …), not optional and not a table.</li>
-  <li><strong>Limits.</strong> Reliable only (a lost unreliable packet would leave the client with a wrong state); up to 32 fields besides the key.</li>
-  <li><strong>Tables inside the struct</strong> (arrays, maps, nested structs) are sent every time: comparing them would cost more than it saves. Put things that change rarely in their own Delta event.</li>
-  <li><strong>New players</strong> automatically get the full struct first, even through <code>FireAll</code>.</li>
-  <li><strong>With <code>Latest = true</code></strong> as well, only the frame's newest value is compared and sent.</li>
-</ul>
-<p class="check"><b>Check:</b> in the live profiler, the event's bytes per second drop sharply while nothing changes.</p>
+<p>Only the struct fields that changed since the last send travel; listeners still get the full struct. <code>Key</code> gives each object its own state, <code>Forget(key)</code> drops it.</p>
+<pre><code>Unit = { From = "Server", Delta = true, Key = "id", Data = { id = "u16", pos = "vector", hp = "u8" } },</code></pre>
+<p class="check"><b>How to use it:</b> <a href="network.html#delta">Networking &rarr; Delta</a></p>
 
 <h3 id="zero-bool">Booleans that cost zero bytes <span class="auto">automatic</span></h3>
 <p>In a <a href="#delta">Delta</a> event, a boolean that changed is not sent at all: its "changed" bit already tells the receiver to flip it. Just declare booleans in a Delta struct:</p>
@@ -188,49 +112,19 @@ end)</code></pre>
 <p>This is a good reason to turn flags like <code>open</code>, <code>stunned</code> or <code>visible</code> into booleans in a Delta event, instead of sending separate events for them.</p>
 
 <h3 id="threshold">Threshold</h3>
-<p>Physics moves positions by tiny amounts every frame, so a <a href="#delta">Delta</a> event keeps sending them. A <code>Threshold</code> says how far a number or vector may move and still count as unchanged.</p>
-<ol class="steps">
-  <li>Your event must have <code>Delta = true</code>. Add <code>Threshold</code>, per field or one number for every number and vector field:
-<pre><code>Unit = { From = "Server", Delta = true, Threshold = { pos = 0.05, hp = 1 }, Data = { pos = "vector", hp = "f32", name = "string" } },
-Bar  = { From = "Server", Delta = true, Threshold = 0.5, Data = { x = "f32", y = "f32" } },</code></pre></li>
-  <li>Fire as usual. Moves smaller than the threshold are not sent; the client keeps the value it has.</li>
-</ol>
-<ul>
-  <li><strong>Small moves add up.</strong> Branch compares with what the client has, not with the last frame: ten moves of 0.01 are sent once together they pass 0.05. The client is never further off than the threshold.</li>
-  <li><strong>How to pick it:</strong> the smallest change a player could notice. 0.05 studs for positions, 1 for a health bar of 100.</li>
-  <li><strong>Exactly the threshold</strong> still counts as unchanged: with <code>Threshold = 1</code>, 5 &rarr; 6 is not sent, 5 &rarr; 7 is.</li>
-</ul>
+<p>With Delta: a number or vector that moved less than this counts as unchanged. Small moves add up, so the receiver is never further off than the threshold.</p>
+<pre><code>Threshold = { pos = 0.05, hp = 1 },</code></pre>
+<p class="check"><b>How to use it:</b> <a href="network.html#threshold">Networking &rarr; Threshold</a></p>
 
 <h3 id="near">FireNear</h3>
-<p>Send only to players whose character is within a radius: explosions, footsteps, local sounds, hit effects.</p>
-<ol class="steps">
-  <li>Nothing to declare: every server → client event has <code>FireNear</code>.</li>
-  <li>Pass a position, a radius in studs, then the event's arguments:
-<pre><code>-- server
-Net.Explosion.FireNear(position, 150, position, damage)</code></pre></li>
-</ol>
-<ul>
-  <li><strong>Distance</strong> is measured to each player's <code>Character.PrimaryPart</code>. Players without a character (dead, loading) are skipped.</li>
-  <li><strong>Choose the radius by what players can see or hear.</strong> Too small, and players at the edge miss the effect.</li>
-  <li><strong>With Latest and Delta</strong> it works like <code>FireList</code>: each nearby player is handled separately.</li>
-</ul>
-<p class="check"><b>Check:</b> with two test players far apart (<b>Test → Clients and Servers</b>), only the near one receives the event.</p>
+<p>Every server &rarr; client event can send only to players whose character is within a radius.</p>
+<pre><code>Net.Explosion.FireNear(position, 150, damage)</code></pre>
+<p class="check"><b>How to use it:</b> <a href="network.html#near">Networking &rarr; FireNear</a></p>
 
 <h3 id="pack">Pack</h3>
-<p>Normally every value takes whole bytes, even a number from 0 to 9 that needs 4 bits. With <code>Pack</code>, small values are written as bits, one after another. It pays off on lists of small numbers: inventories, grids, stats.</p>
-<ol class="steps">
-  <li>Declare the real range of your numbers (the narrower, the smaller) and add <code>Pack = true</code>:
-<pre><code>Bag  = { From = "Server", Pack = true, Data = "{ id: u16(0..1000), count: u8(0..99), rarity: enum(Common, Rare, Epic), fav: boolean }[]" },
-Grid = { From = "Server", Pack = true, Data = "u8(0..9)[..1024]" },</code></pre></li>
-  <li>Fire and listen as usual.</li>
-</ol>
-<ul>
-  <li><strong>What shrinks:</strong> booleans, <code>enum(...)</code>, stepped numbers, whole numbers with a range, <code>u8</code> / <code>i8</code> / <code>u16</code> / <code>i16</code>, optional flags, and lengths of arrays with a maximum. One <code>Bag</code> item above is 20 bits instead of 40.</li>
-  <li><strong>What doesn't:</strong> floats without a step, vectors, CFrames, strings. They still work, as bytes.</li>
-  <li><strong>Not the default</strong> because writing bits costs a little more time than writing bytes; use it where the bytes matter.</li>
-  <li>Not with <code>Delta</code>, and not on functions.</li>
-</ul>
-<p class="check"><b>Check:</b> the plugin's <b>Network</b> page shows the event's smaller size, and the live profiler its bytes per second.</p>
+<p>Small numbers, enums and booleans are written as bits: a 200-item inventory takes about half the bytes. Declare the real range of your numbers.</p>
+<pre><code>Bag = { From = "Server", Pack = true, Data = "{ id: u16(0..1000), count: u8(0..99) }[]" },</code></pre>
+<p class="check"><b>How to use it:</b> <a href="network.html#pack">Networking &rarr; Pack</a></p>
 
 <!-- ───────────────────────── Security ───────────────────────── -->
 <h2 id="security">Security <span class="studio" title="Needs the free Branch Studio plugin">needs Branch Studio</span></h2>
@@ -241,20 +135,9 @@ Grid = { From = "Server", Pack = true, Data = "u8(0..9)[..1024]" },</code></pre>
 -- on the server, target is always a Model and power is always 0..1</code></pre>
 
 <h3 id="rate">Rate limits</h3>
-<p>Validation checks that a packet is correct; <code>Rate</code> checks how often a player sends it.</p>
-<ol class="steps">
-  <li>Add <code>Rate</code> to client → server events and functions, as <code>"N/s"</code> or <code>"N/m"</code>:
-<pre><code>Attack = { From = "Client", Rate = "10/s", Data = { dir = "vector" } },
-Buy    = { Data = "string(..32)", Return = "boolean", Rate = "30/m" },</code></pre></li>
-  <li>Listen as usual. Extra events never reach your listener; an extra function call answers "failed", so the client's <code>Invoke</code> errors:
-<pre><code>-- client
-local ok, err = pcall(Net.Buy.Invoke, "sword")</code></pre></li>
-  <li>Optionally, react to spammers through <a href="#onreject">OnReject</a>.</li>
-</ol>
-<ul>
-  <li><strong>Bursts are fine.</strong> Each player has a bucket of N sends that refills at that rate, so a short burst up to the limit passes.</li>
-  <li><strong>Set it a bit above honest play.</strong> If your gun fires 8 times a second, use <code>"12/s"</code>, not <code>"8/s"</code>: network jitter can bunch honest sends together.</li>
-</ul>
+<p>How many times a second (or minute) a player may send an event or call a function; the rest are dropped and reported to <code>OnReject</code>.</p>
+<pre><code>Attack = { From = "Client", Rate = "10/s", Data = { dir = "vector" } },</code></pre>
+<p class="check"><b>How to use it:</b> <a href="network.html#rate">Networking &rarr; Rate</a></p>
 
 <h3 id="server-code">Server code never reaches players <span class="auto">automatic</span></h3>
 <p>Branch Studio writes the server half of the network to <code>ServerScriptService.BranchNetworkServer</code>. Players never download it, so they can't read your server checks, and a big game doesn't make every player load server code. You don't move or require anything: keep using <code>Branch.Network.Server</code>. Places compiled with older versions are moved over on the next compile.</p>

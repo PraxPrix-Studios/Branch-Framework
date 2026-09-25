@@ -17,6 +17,28 @@
 <div class="eyebrow">api/branch</div>
 <h1>Branch</h1>
 <p class="lead">The module you require on both sides. It loads your segments and gives access to <code>Branch.Data</code> and <code>Branch.Network</code>.</p>
+<h2 id="at-a-glance">At a glance</h2>
+<pre><code>local Branch = require(game.ReplicatedStorage.Packages.Branch)
+
+Branch:Start(script.Parent.Services)          -- once per side: load, Init in order, Start, hooks
+Branch:Start(folderA, folderB, { SegmentRule = "Folders" }) -- several roots, explicit rule
+
+Branch:GetSegment("ShopService")              -- another segment (typed with Branch Studio); errors if unknown
+Branch:LocateSegments({ "Shop", "Coin" })     -- several at once, by name
+Branch:AwaitStart()                           -- yields until every Start has run
+Branch:GetPhase()                             -- "Idle" | "Loading" | "Initializing" | "Started"
+Branch:GetReport()                            -- every segment: name, path, status, Init time
+Branch.Version                                -- "2.0.0"
+
+Branch.Data.Server / Branch.Data.Client       -- player data (loaded on first use)
+Branch.Network.Server / .Client / .OnReject   -- your compiled events (from Branch Studio)</code></pre>
+<ul class="glance-notes">
+  <li><strong>Look segments up in <code>Init</code> or later</strong>, not at the top of a module: while modules load, the one you want may not exist yet.</li>
+  <li><strong>A typo is loud:</strong> <code>Branch.Netwrok</code> errors instead of returning <code>nil</code>.</li>
+  <li><strong>Utilities are modules:</strong> <code>require(Packages.Branch.Util.Timer)</code>, not <code>Branch.Util</code>. See <a href="util.html">Utilities</a>.</li>
+</ul>
+<p class="glance-more">Every function in detail:</p>
+
 <pre><code>local Branch = require(game.ReplicatedStorage.Packages.Branch)</code></pre>
 <p>Reading a key that does not exist on <code>Branch</code> is an error, so a typo such as <code>Branch.Netwrok</code> fails loudly. The utilities are ModuleScripts inside the package, not fields: see <a href="util.html">Utilities</a>.</p>
 

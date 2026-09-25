@@ -17,6 +17,7 @@
 .feat p{margin:0;color:var(--muted);font-size:14.5px;max-width:none}
 .feat code{font-size:.82em}
 .feat pre{margin:10px 0 0;font-size:12.5px;padding:10px 12px}
+.feat > article > .studio{align-self:flex-start;margin:0 0 8px 18px;vertical-align:0}
 .feat .new{font:600 10.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--good);border:1px solid color-mix(in srgb,var(--good) 45%,transparent);border-radius:999px;padding:2px 7px;margin-left:auto}
 .feat .how{margin-top:auto;padding-top:12px;align-self:flex-start;font:600 13.5px var(--body);color:var(--cyan);text-decoration:none;display:inline-flex;gap:6px;align-items:center}
 .feat .how span{transition:transform .15s}
@@ -84,10 +85,10 @@
   <article><h3><i></i>Template checks all the way down</h3><p>Every write is checked against your template, including nested tables, so a typo or a wrong type never reaches a save.</p><a class="how" href="guide/features.html#template-checks">How to use <span>→</span></a></article>
   <article><h3><i></i>No NaN, no infinity</h3><p>A division by zero cannot break a profile: values DataStores cannot store are refused at the write.</p><a class="how" href="guide/features.html#no-nan">How to use <span>→</span></a></article>
   <article><h3><i></i>Migrations on a copy</h3><p>If a migration fails halfway, the saved data is left untouched and the player is asked to rejoin. Data is never saved half-upgraded.</p><a class="how" href="guide/features.html#migrations">How to use <span>→</span></a></article>
-  <article><h3><i></i>Template change warnings<span class="studio" title="Needs the free Branch Studio plugin">needs Branch Studio</span><span class="new">new</span></h3><p>Remove a field or change its type, and Branch Studio warns that saved data will not follow on its own, until you add a migration.</p><a class="how" href="guide/features.html#template-warnings">How to use <span>→</span></a></article>
+  <article><h3><i></i>Template change warnings<span class="new">new</span></h3><span class="studio" title="Needs the free Branch Studio plugin">needs Branch Studio</span><p>Remove a field or change its type, and Branch Studio warns that saved data will not follow on its own, until you add a migration.</p><a class="how" href="guide/features.html#template-warnings">How to use <span>→</span></a></article>
   <article><h3><i></i>Writes on the way out</h3><p><code>PlayerRemoving</code> hooks can still change the leaving player's data, and those writes are saved with the session.</p><a class="how" href="guide/features.html#leaving">How to use <span>→</span></a></article>
   <article><h3><i></i>Observers that see everything</h3><p><code>Observe("stats.kills")</code> fires even when the whole <code>stats</code> table is replaced, and <code>"friends.12345"</code> reaches UserId-keyed dictionaries.</p><a class="how" href="guide/features.html#observers">How to use <span>→</span></a></article>
-  <article><h3><i></i>A DataStore browser that protects players<span class="studio" title="Needs the free Branch Studio plugin">needs Branch Studio</span></h3><p>Browse stores as a fast virtual tree, restore old versions, watch the 4 MB limit. ProfileStore session locks are respected, a player's newer progress is never overwritten, and live data is read-only until you unlock writes.</p><a class="how" href="guide/features.html#datastores">How to use <span>→</span></a></article>
+  <article><h3><i></i>A DataStore browser that protects players</h3><span class="studio" title="Needs the free Branch Studio plugin">needs Branch Studio</span><p>Browse stores as a fast virtual tree, restore old versions, watch the 4 MB limit. ProfileStore session locks are respected, a player's newer progress is never overwritten, and live data is read-only until you unlock writes.</p><a class="how" href="guide/features.html#datastores">How to use <span>→</span></a></article>
 </div>
 
 <h2>A framework that stays out of your way</h2>
