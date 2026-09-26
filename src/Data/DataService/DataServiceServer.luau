@@ -150,6 +150,13 @@ function DataServiceServer.init(self: DataServiceServer, options: DataOptions): 
 	end)
 end
 
+-- Branch patch: the store every call goes to. With useMock that is the
+-- Mock store, for every call: a Reset or a message in a test must never
+-- reach a player's real save.
+local function store(self: DataServiceServer): any
+	return if self.options.useMock then (self.playerStore :: any).Mock else self.playerStore
+end
+
 local function storeCancel(player: Player)
 	return {
 		Cancel = function()
@@ -174,7 +181,7 @@ end
 function DataServiceServer.resetData(self: DataServiceServer, player: Player): ()
 	local index = self:_getProfileKey(player.UserId)
 	self:_playerRemoving(player)
-	self.playerStore:RemoveAsync(index)
+	store(self):RemoveAsync(index)
 	player:Kick("Your data has been reset. Please rejoin.")
 end
 
@@ -183,7 +190,7 @@ function DataServiceServer._playerAdded(self: DataServiceServer, player: Player)
 	local index = self:_getProfileKey(userId)
 
 	if self.options.resetData and not self.options.viewedUserId then
-		self.playerStore:RemoveAsync(index)
+		store(self):RemoveAsync(index)
 	end
 
 	local profile: Profile = if self.options.useMock
@@ -270,7 +277,7 @@ function DataServiceServer.sendGlobalMessage(
 	data: { any }
 ): boolean
 	local messageData: MessageData = { key = key, data = data }
-	return self.playerStore:MessageAsync(self:_getProfileKey(userId), messageData)
+	return store(self):MessageAsync(self:_getProfileKey(userId), messageData)
 end
 
 --[=[
@@ -305,6 +312,14 @@ function DataServiceServer._playerRemoving(self: DataServiceServer, player: Play
 	local profile = self._profiles[player]
 
 	if not profile then
+		-- Branch patch: a player who left before their profile loaded still
+		-- releases whoever waits for their data (waitForData returns nil)
+		local waitSignal = self._waitSignals[player]
+		if waitSignal then
+			self._waitSignals[player] = nil
+			waitSignal:Fire()
+			waitSignal:Destroy()
+		end
 		return
 	end
 
@@ -401,8 +416,8 @@ end
 	Asynchronously retrieves the profile for the given user ID using internal ProfileStore.
 ]=]
 function DataServiceServer.asyncGetProfile(self: DataServiceServer, userId: number | string): Profile?
-	local profileKey = DATA_PREFIX .. tostring(userId)
-	return self.playerStore:GetAsync(profileKey)
+	-- Branch patch: the configured key prefix (it was always "PLAYER_"), and the Mock store in Mock mode
+	return store(self):GetAsync(self:_getProfileKey(userId))
 end
 
 function DataServiceServer._initPlayer(self: DataServiceServer, player: Player, data: any): ()
@@ -487,7 +502,27 @@ end
 	```
 ]=]
 function DataServiceServer.get(self: DataServiceServer, player: Player, path: Path?): any
-	return self._data[player]:get(path)
+	-- Branch patch: clients call this through the remote, so anything may
+	-- arrive: data that has not loaded, or a forged path, returns nil
+	-- instead of erroring on the server.
+	local data = self._data[player]
+	if data == nil then
+		return nil
+	end
+	if path == nil or type(path) == "string" then
+		return data:get(path)
+	end
+	if type(path) ~= "table" or #path > 32 then
+		return nil
+	end
+	local node = data:get()
+	for _, key in path do
+		if type(node) ~= "table" or (type(key) ~= "string" and type(key) ~= "number") then
+			return nil
+		end
+		node = node[key]
+	end
+	return node
 end
 
 --[=[

@@ -10,6 +10,10 @@ local Path = {}
 export type DataPath = string | { string | number }
 
 local cache: { [string]: { string | number } } = {}
+local cached = 0
+-- Paths built at run time ("friends." .. userId) are all different: past
+-- this many, the cache starts over instead of growing for the whole server.
+local CACHE_LIMIT = 4096
 
 function Path.parse(path: DataPath): { string | number }
 	if type(path) == "table" then
@@ -31,7 +35,12 @@ function Path.parse(path: DataPath): { string | number }
 	end
 
 	table.freeze(parts)
+	if cached >= CACHE_LIMIT then
+		table.clear(cache)
+		cached = 0
+	end
 	cache[path] = parts
+	cached += 1
 	return parts
 end
 

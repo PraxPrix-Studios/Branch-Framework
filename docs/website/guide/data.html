@@ -100,6 +100,7 @@ Leaderstats = { coins = "Coins", ["stats.kills"] = "Kills" } -- path = display n
 <ul>
   <li><strong>When they run.</strong> Migrations run right after the profile loads, before the client ever sees the data.</li>
   <li><strong>New profiles.</strong> A brand-new profile already has the newest shape, so no migrations run on it.</li>
+  <li><strong>New keys are already there.</strong> Fields the template gained are filled in before migrations run, so a migration that moves <code>coins</code> into a new <code>wallet.coins</code> finds <code>wallet</code> already made, holding the template's default.</li>
   <li><strong>Failures.</strong> Migrations run on a copy. If one fails, the saved data is left exactly as it was, the error names the migration, and the player is asked to rejoin. Data is never saved half-upgraded.</li>
 </ul>
 <div class="note warn"><b>Only append.</b> Never edit or reorder a migration that already shipped: profiles remember which version they reached.</div>

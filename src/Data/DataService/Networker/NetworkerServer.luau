@@ -94,10 +94,22 @@ function NetworkerServer.new(networkTag: NetworkTag, module: {}?, clientAccess: 
 		self:addClientAccess(module, clientAccess)
 	end
 
+	-- Branch patch: anything a client sends arrives here, so a method that is
+	-- not a string is ignored, and an unknown one is reported once (not once
+	-- per call: an exploiter could flood the output).
+	local reported: { [string]: boolean } = {}
+	local reportedCount = 0
 	local function callback(player: Player, method: string, ...: any?): ...any?
+		if type(method) ~= "string" then
+			return
+		end
 		local access = self._accessLookup[method]
 		if not access then
-			warn(method .. " does not exist or is restricted for ", networkTag)
+			if not reported[method] and reportedCount < 32 then
+				reported[method] = true
+				reportedCount += 1
+				warn(`{string.sub(method, 1, 64)} does not exist or is restricted for`, networkTag)
+			end
 			return
 		end
 

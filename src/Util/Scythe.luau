@@ -71,7 +71,9 @@ export type Scope = number
 -- When true, every disposer runs protected: one throwing callback can no
 -- longer strand the remaining resources. Errors are counted and re-raised
 -- once, after the scope is fully drained. Set false for 1.0.0 fail-fast.
-local PROTECTED_DISPOSAL = false
+-- (Branch ships it on, as the notes above promise: a cleanup that stops at
+-- the first error would leave connections and instances behind.)
+local PROTECTED_DISPOSAL = true
 
 local INITIAL_SCOPES = 64      -- starting scope capacity (module-wide)
 local INITIAL_ITEMS = 8        -- starting item capacity per scope

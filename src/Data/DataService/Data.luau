@@ -116,6 +116,9 @@ end
 function Data.arrayInsert<T>(self: Data<T>, path: Path, value: any, index: number?): ()
 	local data = self:get(path)
 	assert(type(data) == "table", "Data at path is not a table")
+	-- Branch patch: the array as it was, so observers of its elements fire
+	-- only when their element changed, with the value before
+	local before = table.clone(data)
 
 	if index then
 		table.insert(data, index, value)
@@ -123,7 +126,7 @@ function Data.arrayInsert<T>(self: Data<T>, path: Path, value: any, index: numbe
 		table.insert(data, value)
 	end
 
-	local pathString = self:_firePathChangedSignals(path)
+	local pathString = self:_firePathChangedSignals(path, before)
 
 	local signal = self._signals.arrayInserted[pathString]
 	if signal then
@@ -134,8 +137,9 @@ end
 function Data.arrayRemove<T>(self: Data<T>, path: Path, index: number): any
 	local data = self:get(path)
 	assert(type(data) == "table", "Data at path is not a table")
+	local before = table.clone(data) -- Branch patch: see arrayInsert
 	local value = table.remove(data, index)
-	local pathString = self:_firePathChangedSignals(path)
+	local pathString = self:_firePathChangedSignals(path, before)
 
 	local signal = self._signals.arrayRemoved[pathString]
 	if signal then

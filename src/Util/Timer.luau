@@ -9,7 +9,9 @@
 --  * Stop wakes threads waiting in :Wait(), and a finished/stopped timer
 --    does not run its callbacks again;
 --  * callbacks run in their own threads: one that errors is reported and
---    cannot break the scheduler; Wait() on a dead timer returns at once.
+--    cannot break the scheduler; Wait() on a dead timer returns at once;
+--  * a callback may Start the timer again (a repeating timer), and the
+--    restarted timer can be paused and stopped like any other.
 
 local Timer = {}
 
@@ -59,16 +61,15 @@ local function StateCallback(TimerObject, State, ...)
 	end
 end
 
-local function WakeWaiting(TimerObject, State, Elapsed)
+local function EndTimer(TimerObject, State, Elapsed)
+	-- The timer is over before any callback runs: a callback that starts it
+	-- again (a repeating timer) leaves it running, not marked as dead.
+	TimerObject.State = TimerEnum.Dead
+	TimerObject.EndState = State
+	TimerObject.EndElapsed = Elapsed
 	local Threads = TimerObject.YieldedThreads
 	TimerObject.YieldedThreads = {}
 
-	for _, Thread in next, Threads do
-		task.spawn(Thread, State, Elapsed)
-	end
-end
-
-local function EndTimer(TimerObject, State, Elapsed)
 	local Callback = TimerObject.Callback
 
 	if Callback then
@@ -91,10 +92,9 @@ local function EndTimer(TimerObject, State, Elapsed)
 		end
 	end
 
-	TimerObject.State = TimerEnum.Dead
-	TimerObject.EndState = State
-	TimerObject.EndElapsed = Elapsed
-	WakeWaiting(TimerObject, State, Elapsed)
+	for _, Thread in next, Threads do
+		task.spawn(Thread, State, Elapsed)
+	end
 end
 
 local function ProcessTimers()

@@ -294,6 +294,15 @@ function branch.Start(self: Branch, ...: Instance)
 	for index = 1, count_ do
 		local argument = select(index, ...)
 		if index == count_ and type(argument) == "table" and typeof(argument) ~= "Instance" then
+			-- a list of roots is an easy slip, and would otherwise load nothing
+			if #argument > 0 then
+				error("Branch:Start takes roots as separate arguments: Branch:Start(folderA, folderB), not a table of them", 2)
+			end
+			for key in argument do
+				if key ~= "SegmentRule" then
+					error(`Branch:Start got an unknown option "{tostring(key)}" (the only option is SegmentRule)`, 2)
+				end
+			end
 			options = argument :: any
 		elseif typeof(argument) == "Instance" then
 			table.insert(roots, argument)
@@ -304,6 +313,9 @@ function branch.Start(self: Branch, ...: Instance)
 	local rule: SegmentRule = options.SegmentRule or (script:GetAttribute("SegmentRule") :: SegmentRule?) or "Suffix"
 	if rule ~= "Suffix" and rule ~= "Folders" then
 		error(`Branch:Start SegmentRule must be "Suffix" or "Folders", got {tostring(rule)}`, 2)
+	end
+	if #roots == 0 then
+		warn("[Branch] Start was given no roots, so no segments were loaded: Branch:Start(script.Parent.Services)")
 	end
 	phase = "Loading"
 
