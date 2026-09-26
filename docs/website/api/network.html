@@ -113,7 +113,7 @@ Net.Mob.Exact(id, false)   -- the fight is over</code></pre>
 <h3>Event.At <span class="tag">client · Predict only</span></h3>
 <div class="sig">Client.Service.Event.<b>At</b>(key): ...values?      -- Predict with Key
 Client.Service.Event.<b>At</b>(): ...values?         -- Predict without Key</div>
-<p>The guess for right now: one value for each predicted field, in the order they are declared, or <code>nil</code> before the first update for that key (and after <code>Forget</code>). Each value is the last one that arrived plus its speed times the time since, kept inside the field's declared range; a correction is smoothed over 0.1 seconds. Call it every frame when you draw. See <a href="../guide/network.html#predict">Predict</a>.</p>
+<p>The guess for right now: one value for each predicted field, in the order they are declared, or <code>nil</code> before the first update for that key (and after <code>Forget</code>). With an Instance <code>Key</code> and StreamingEnabled, it is also <code>nil</code> until an update arrives while this client has the Instance. Each value is the last one that arrived plus its speed times the time since, kept inside the field's declared range; a correction is smoothed over 0.1 seconds. Call it every frame when you draw. See <a href="../guide/network.html#predict">Predict</a>.</p>
 <pre><code>RunService.RenderStepped:Connect(function()
 	for id, part in parts do
 		part.Position = Net.Mob.At(id) or part.Position

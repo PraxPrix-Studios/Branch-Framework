@@ -180,10 +180,16 @@ local function disposeOne(tag: number, value: any): ()
 					buffer.writeu8(scopeFlags, childId, bit32.bor(childFlags, FLAG_DESTROY_PENDING))
 				end
 			else
-				cleanScope(childId)
+				-- like Scythe.destroy: the child is released even when one of its
+				-- disposers threw (it used to stay alive, unreachable from here)
+				local ok, err = pcall(cleanScope :: any, childId)
 
 				if buffer.readu8(scopeFlags, childId) ~= 0 then -- BE SAFE!
 					releaseScope(childId)
+				end
+
+				if not ok then
+					error(err, 0)
 				end
 			end
 		end

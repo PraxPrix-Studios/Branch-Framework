@@ -76,15 +76,17 @@ end
 
 -- The parts to write through: a numeric segment becomes the string key when
 -- the table it indexes is a dictionary (has that string key, or has keys but
--- no array part). Writing a number key next to string keys would give a
--- mixed table, which DataStores refuse to save.
+-- no array part), or is empty and the number is not 1 (an array starts at 1,
+-- so "friends.12345" starts a dictionary keyed by UserIds). Writing a number
+-- key next to string keys would give a mixed table, which DataStores refuse
+-- to save.
 function Path.resolve(root: any, parts: { string | number }): { string | number }
 	local node = root
 	local out: { string | number }? = nil
 	for index, part in parts do
 		if type(part) == "number" and type(node) == "table" and node[part] == nil then
 			local text = tostring(part)
-			if node[text] ~= nil or (next(node) ~= nil and #node == 0) then
+			if node[text] ~= nil or (#node == 0 and (next(node) ~= nil or part ~= 1)) then
 				local copy = out or table.clone(parts)
 				copy[index] = text
 				out = copy

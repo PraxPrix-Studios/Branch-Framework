@@ -198,6 +198,13 @@ function DataServiceServer._playerAdded(self: DataServiceServer, player: Player)
 		elseif self.options.viewedUserId or self.options.dontSave then self.playerStore:GetAsync(index)
 		else self.playerStore:StartSessionAsync(index, storeCancel(player))
 
+	if not profile and self.options.dontSave and not self.options.viewedUserId and player:IsDescendantOf(Players) then
+		-- Branch patch: with dontSave a player who never saved has nothing to
+		-- read (GetAsync returns nil). They were kicked on every join; now they
+		-- play on a fresh profile from the template that lives in memory only.
+		profile = self.playerStore.Mock:StartSessionAsync(index, storeCancel(player))
+	end
+
 	if not profile then
 		player:Kick(`Profile load fail - Please rejoin`)
 		return

@@ -131,6 +131,7 @@ end</code></pre>
   <li><strong><code>Forget(key)</code></strong> drops the state kept for a key: call it when the object is gone, so neither side keeps it in memory. The next send for that key goes out in full. Without <code>Key</code>, <code>Forget()</code> makes the next send to every player full.</li>
   <li><strong>Reliable only.</strong> A lost unreliable packet would leave the receiver with the wrong state, so the compiler refuses <code>Delta</code> on <code>Unreliable</code> events.</li>
   <li><strong>Tables inside the struct</strong> (arrays, maps, nested structs) are sent whenever the struct is sent: comparing them would cost more than it saves.</li>
+  <li><strong>Instances and StreamingEnabled.</strong> A client that does not have an Instance right now (streamed out) receives <code>nil</code> for it. An Instance <code>Key</code> travels together with a small number, so that client keeps the object's state anyway, and its listener hears about the object with the next update once the Instance has streamed in. Instance fields are sent with every update, so one that arrived as <code>nil</code> does not stay <code>nil</code>. A map keyed by Instances leaves out the ones the client does not have.</li>
   <li><strong><code>FireAll</code></strong> on a Delta event writes to each player separately, because every player can hold a different state (someone who just joined gets the full struct).</li>
 </ul>
 <p><code>Delta</code> works with <code>Latest</code>, <code>Hz</code> and <code>Lod</code>: only the newest value is compared and sent.</p>

@@ -50,6 +50,10 @@ function Data.new<T>(data: T): Data<T>
 	return self
 end
 
+-- Branch patch: a number key and the same key as a string ("friends.12345")
+-- are one path. Branch never writes both into one table (DataStores refuse
+-- mixed tables), and an observer that attached while a table was still
+-- empty then hears the write whichever way the key was stored.
 local function pathToString(path: Path): string
 	if type(path) == "string" then
 		return path
@@ -58,10 +62,6 @@ local function pathToString(path: Path): string
 	local pathString = ""
 	local maxIndex = #path
 	for i, key in ipairs(path) do
-		if type(key) == "number" then
-			pathString ..= "#"
-		end
-
 		pathString ..= key
 		if i < maxIndex then
 			pathString ..= "."
@@ -171,7 +171,15 @@ local function readParts(root: any, parts: { any }): any
 		if type(node) ~= "table" then
 			return nil
 		end
-		node = node[key]
+		-- "3" is the array's third item, or the key "3" of a dictionary
+		local value = node[key]
+		if value == nil then
+			local number = tonumber(key)
+			if number ~= nil then
+				value = node[number]
+			end
+		end
+		node = value
 	end
 	return node
 end
@@ -189,7 +197,7 @@ function Data._fireDescendantSignals<T>(self: Data<T>, pathString: string, value
 		if string.sub(key, 1, #prefix) == prefix then
 			local parts = {}
 			for segment in string.gmatch(string.sub(key, #prefix + 1), "[^%.]+") do
-				table.insert(parts, if string.sub(segment, 1, 1) == "#" then tonumber(string.sub(segment, 2)) or segment else segment)
+				table.insert(parts, segment)
 			end
 			local new, old = readParts(value, parts), readParts(prev, parts)
 			if new ~= old then
@@ -225,10 +233,7 @@ function Data._firePathChangedSignals<T>(self: Data<T>, path: Path, prev: any?):
 			pathString ..= "."
 		end
 
-		if type(key) == "number" then
-			pathString ..= "#"
-		end
-		pathString ..= key
+		pathString ..= key -- no "#" for numbers: see pathToString
 
 		self:_fireChangedSignal(pathString, value, before)
 	end

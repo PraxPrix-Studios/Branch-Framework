@@ -43,7 +43,7 @@ Data.GetProfile(player)                       -- the raw ProfileStore profile</c
   <li><strong>Template checks all the way down:</strong> a missing field or a wrong type is refused at your call, never in a save.</li>
   <li><strong>No NaN or infinity</strong> in any write: DataStores cannot store them.</li>
   <li><strong>Writes before loading error</strong> and tell you to use <code>Await</code> or <code>OnLoaded</code>; reads return <code>nil</code>.</li>
-  <li><strong>Migrations run on a copy:</strong> if one fails, the saved data is untouched.</li>
+  <li><strong>Migrations run on a copy:</strong> if one fails, the saved data is untouched. Each runs once per profile, even while an update reaches servers one by one.</li>
   <li><strong><code>PlayerRemoving</code> hooks can still write</strong>, and those writes are saved.</li>
 </ul>
 <p class="glance-more">Every function in detail:</p>
@@ -77,7 +77,7 @@ type Config = {
   <li><code>Store</code> — the ProfileStore name. Default <code>"PlayerData"</code>.</li>
   <li><code>KeyPrefix</code> — the DataStore key prefix. Default <code>"PLAYER_"</code>.</li>
   <li><code>Mock</code> — keep data in memory only, never touching DataStores. Handy in Studio.</li>
-  <li><code>DontSave</code> — load real data but never write it.</li>
+  <li><code>DontSave</code> — load real data but never write it. A player who has never saved plays on a fresh profile that is kept in memory only.</li>
   <li><code>Migrations</code> — <code>Migrations[n]</code> upgrades a profile from version <code>n-1</code> to <code>n</code>. Run on a copy; see <a href="../guide/data.html#migrations">Migrations</a>.</li>
   <li><code>Leaderstats</code> — a list of paths (the display name is the last part of the path) or a map of path → display name.</li>
 </ul>

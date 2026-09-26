@@ -153,7 +153,8 @@ function Server.Start(config: Config)
 		if latest > 0 then
 			local profile = self:getProfile(player)
 			local meta = profile.RobloxMetaData
-			local version = if type(meta) == "table" then meta.BranchDataVersion else nil
+			local stored = if type(meta) == "table" then meta.BranchDataVersion else nil
+			local version = if type(stored) == "number" then stored else nil
 			if version == nil and profile.SessionLoadCount <= 1 then
 				version = latest -- brand-new profile: already in the newest shape
 			end
@@ -177,7 +178,10 @@ function Server.Start(config: Config)
 					data[key] = value
 				end
 			end
-			if type(meta) == "table" then
+			-- Never lowered: while an update rolls out, an old server (fewer
+			-- migrations) can load a profile a new one already upgraded, and a
+			-- lowered version would run those migrations a second time later.
+			if type(meta) == "table" and (type(stored) ~= "number" or stored < latest) then
 				meta.BranchDataVersion = latest
 			end
 		end
