@@ -52,6 +52,7 @@ return CombatService</code></pre>
 <tr><td><code>Delta</code></td><td><code>true</code>: only the struct fields that changed since the last send travel. See <a href="#delta">Delta</a>.</td><td><code>false</code></td></tr>
 <tr><td><code>Key</code></td><td>With <code>Delta</code>: the field that tells objects apart, such as <code>"id"</code>.</td><td>none</td></tr>
 <tr><td><code>Threshold</code></td><td>With <code>Delta</code>: how far a number or vector may move and still count as unchanged. One number, or per field: <code>{ pos = 0.1 }</code>. See <a href="#threshold">Threshold</a>.</td><td>none</td></tr>
+<tr><td><code>Predict</code></td><td>With <code>Delta</code>, server to client: the client guesses a number or vector from its speed between updates, and an update goes out only when the guess is off by more than this: <code>{ pos = 0.25 }</code>. Adds <code>At(key)</code> on the client and <code>Exact(key, on)</code> on the server. See <a href="#predict">Predict</a>.</td><td>none</td></tr>
 <tr><td><code>Pack</code></td><td><code>true</code>: small numbers, enums and booleans share a bit stream instead of taking a byte each. See <a href="#pack">Pack</a>.</td><td><code>false</code></td></tr>
 <tr><td><code>Rate</code></td><td><code>"15/s"</code> or <code>"600/m"</code>: how many a client may send. See <a href="#rate">Rate</a>.</td><td>no limit</td></tr>
 </tbody></table></div>
@@ -80,6 +81,7 @@ return CombatService</code></pre>
 <tr><td>effects that only nearby players see at all</td><td><a href="#near"><code>FireNear</code></a></td><td>every send to far players</td></tr>
 <tr><td>a struct whose fields rarely all change</td><td><a href="#delta"><code>Delta</code></a> (+ <code>Key</code> for many objects)</td><td>the fields that did not change</td></tr>
 <tr><td>positions that jitter by tiny amounts</td><td><a href="#threshold"><code>Threshold</code></a> (with <code>Delta</code>)</td><td>moves too small to matter</td></tr>
+<tr><td>things that move steadily: walking mobs, projectiles, timers</td><td><a href="#predict"><code>Predict</code></a> (with <code>Delta</code>)</td><td>almost every update while they keep their speed</td></tr>
 <tr><td>lists of small numbers: inventories, grids, stats</td><td><a href="#pack"><code>Pack</code></a></td><td>30-50% of those bytes</td></tr>
 <tr><td>numbers in a bigger type than they need</td><td><a href="#see">Profile</a> in Branch Studio</td><td>1-7 bytes per number</td></tr>
 </tbody></table></div>
@@ -143,6 +145,33 @@ Bar  = { From = "Server", Delta = true, Threshold = 0.5, Data = { x = "f32", y =
   <li><strong>Exactly the threshold</strong> still counts as unchanged: with <code>Threshold = 1</code>, 5 → 6 is not sent, 5 → 7 is.</li>
 </ul>
 
+<h3 id="predict">Predict: guess between updates</h3>
+<p>A mob walking in a straight line changes position every frame, so even with a <code>Threshold</code> it is sent many times a second. With <code>Predict</code>, a position travels with its speed, and the client keeps it moving on its own. An update goes out only when the client's guess is off by more than the number you give: a straight walk costs one update, and a stop, a turn or a teleport one more.</p>
+<pre><code>Mob = { From = "Server", Delta = true, Key = "id", Predict = { pos = 0.25 }, Data = { id = "u16", pos = "vector", hp = "u8" } },</code></pre>
+<pre><code>-- server: fire every frame, as before; Predict decides what to send
+Net.Mob.FireAll({ id = id, pos = mob.Position, hp = mob.Hp })
+Net.Mob.Exact(id, true)    -- a fight starts: this mob is sent exactly, no guessing
+Net.Mob.Exact(id, false)   -- the fight is over: back to guessing
+
+-- client: every frame, draw each mob where the guess says it is now
+RunService.RenderStepped:Connect(function()
+	for id, part in parts do
+		part.Position = Net.Mob.At(id) or part.Position
+	end
+end)</code></pre>
+<ul>
+  <li><strong><code>At(key)</code></strong> (<code>At()</code> without a <code>Key</code>) returns the guess for right now: one value per predicted field, in the order you declared them, or <code>nil</code> before the first update. Call it when you draw. <code>On</code> still gets the full struct whenever an update arrives, with the guess in the predicted fields.</li>
+  <li><strong>Keep firing every frame.</strong> The server works out the speed from the values you fire and sends nothing while the guess is good. If you stop firing an object to a player (it left their <code>Lod</code> range, or your code stopped firing it), the guess stops where you fired it last, within about 0.3 seconds.</li>
+  <li><strong>Exact for a while:</strong> <code>Net.Mob.Exact(id, true)</code> on the server turns the guessing off for one object: every change is sent every frame, whatever <code>Hz</code> and <code>Lod</code> say, and clients show it as it arrives. Use it for a fight, a cutscene, anything that must be exact; <code>Exact(id, false)</code> goes back to guessing. Both switches are smoothed like a correction, so the object does not jump. Without a <code>Key</code>: <code>Exact(true)</code>. The other objects keep guessing.</li>
+  <li><strong>Corrections are smoothed</strong> over 0.1 seconds, so a stop or a turn does not snap. A jump of more than 20 times the number (a teleport, a respawn) is shown at once.</li>
+  <li><strong>How far off:</strong> between updates, the guess is never further off than the number. While a correction is being smoothed, the drawn value can be up to about twice that for a moment.</li>
+  <li><strong>What it covers:</strong> required number and vector fields. One number (<code>Predict = 0.25</code>) applies to every such field without a <code>Threshold</code>. A number's guess stays inside its declared range: a countdown declared <code>f32(0..60)</code> stops at 0.</li>
+  <li><strong>Straight lines only:</strong> the guess keeps the last speed. Something falling or circling changes speed all the time, so it is sent more often, about as often as with <code>Threshold</code>.</li>
+  <li><strong>Server → client only</strong>, with <code>Delta</code>. It includes <code>Latest</code> and works with <code>Hz</code> and <code>Lod</code>: a far player's corrections wait for their ring's turn.</li>
+  <li><strong>The speed travels too:</strong> an update carries 2 more bytes per number and 6 per vector.</li>
+</ul>
+<p>In the <a href="../tutorial-horde.html">horde tutorial</a>, replacing <code>Threshold = { pos = 0.1 }</code> with <code>Predict = { pos = 0.25 }</code> takes 200 mobs from 10.3 KB/s to 1.9 KB/s, and the mobs are drawn closer to where they really are.</p>
+
 <h3 id="near">FireNear: only players nearby</h3>
 <pre><code>Net.Explosion.FireNear(position, 150, damage)   -- players whose character is within 150 studs</code></pre>
 <p>Every server → client event has <code>FireNear(position, radius, ...)</code>. It checks each player's <code>Character.PrimaryPart</code>; players without a character are skipped. In a big map, the savings grow with the number of players. For things that far players should still see, now and then, use <a href="#lod"><code>Lod</code></a> instead.</p>
@@ -190,6 +219,7 @@ local Net = Branch.Network.Client.CombatService
 Net.Hit.Fire({ Target = model, Power = 0.8 })
 Net.Damage.On(function(amount, crit) end)
 Net.Move.On(function(pos, yaw) end)
+local pos = Net.Mob.At(id)                        -- Predict events: the guess for right now
 local ok = Net.Buy.Invoke("sword")                -- yields for the answer</code></pre>
 <ul>
   <li><strong><code>On</code> for events</strong> returns a function that disconnects the listener. An event can have many listeners.</li>

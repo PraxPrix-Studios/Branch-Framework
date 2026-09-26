@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Branch.Network · Branch</title>
-<meta name="description" content="API reference for Branch.Network: Fire, FireAll, FireList, FireExcept, On, Invoke and OnReject.">
+<meta name="description" content="API reference for Branch.Network: Fire, FireAll, FireList, FireExcept, FireNear, FireFrom, Forget, On, At, Invoke and OnReject.">
 <link rel="icon" href="../assets/mark.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
@@ -26,6 +26,7 @@ Net.Damage.FireExcept(player, 25)             -- everyone but one
 Net.Damage.FireNear(position, 100, 25)        -- players within 100 studs
 Net.Mob.FireFrom(position, mob)               -- Lod events: rate by distance
 Net.Unit.Forget(id)                           -- Delta + Key: drop an object's state
+Net.Mob.Exact(id, true)                       -- Predict: no guessing for this object for now
 Net.Hit.On(function(player, hit) end)         -- a client's event, already validated
 Net.Buy.On(function(player, item) return true end) -- a function's one handler
 Branch.Network.OnReject(function(player, reason) end) -- refused packets, rate limits
@@ -33,6 +34,7 @@ Branch.Network.OnReject(function(player, reason) end) -- refused packets, rate l
 -- client: Branch.Network.Client.&lt;Service&gt;.&lt;Event&gt;
 Net.Hit.Fire({ Target = model })              -- to the server, batched per frame
 Net.Damage.On(function(amount) end)           -- returns a function that disconnects
+local pos = Net.Mob.At(id)                    -- Predict events: the guess for right now
 local ok = Net.Buy.Invoke("sword")            -- yields for the answer; errors if it failed</code></pre>
 <ul class="glance-notes">
   <li><strong>Batched per frame:</strong> everything you fire for a player in one frame leaves as one remote call, in order.</li>
@@ -91,13 +93,32 @@ Branch.Network.OnReject                    -- on the server</code></pre>
 <h3>Event.Forget <span class="tag">server · client · Delta only</span></h3>
 <div class="sig">Service.Event.<b>Forget</b>(key)      -- Delta with Key
 Service.Event.<b>Forget</b>()         -- Delta without Key</div>
-<p>With a <code>Key</code>: drops the state kept for that key on this side and on every receiver (no listener is called), so the next send for that key is full. A value for that key still waiting to be sent (<code>Latest</code>, <code>Hz</code>, <code>Lod</code>) is dropped too. Call it when the object is gone. Without a <code>Key</code>: the next send to every recipient is full.</p>
+<p>With a <code>Key</code>: drops the state kept for that key on this side and on every receiver (no listener is called), so the next send for that key is full. With <code>Predict</code>, it also turns <a href="#exact"><code>Exact</code></a> off for that key. A value for that key still waiting to be sent (<code>Latest</code>, <code>Hz</code>, <code>Lod</code>) is dropped too. Call it when the object is gone. Without a <code>Key</code>: the next send to every recipient is full.</p>
 </div>
-<div class="note"><b>Events with send-less options</b> keep the same functions. With <code>Latest</code>, <code>Hz</code> or <code>Lod</code>, the newest values are written when the frame ships (with <code>Hz</code> and <code>Lod</code>, only on frames when their timer allows). With <code>Delta</code>, <code>FireAll</code>, <code>FireList</code>, <code>FireExcept</code> and <code>FireNear</code> write to each player separately. <code>Threshold</code> and <code>Pack</code> change only what travels, not how you call. See <a href="../guide/network.html#savers">Send less</a>.</div>
+<div class="api" id="exact">
+<h3>Event.Exact <span class="tag">server · Predict only</span></h3>
+<div class="sig">Server.Service.Event.<b>Exact</b>(key, on: boolean)   -- Predict with Key
+Server.Service.Event.<b>Exact</b>(on: boolean)        -- Predict without Key</div>
+<p>Turns the guessing off (<code>true</code>) or back on (<code>false</code>) for one object, for every player. While it is off, every change is sent every frame, whatever <code>Hz</code> and <code>Lod</code> say, and <a href="#at"><code>At</code></a> returns exactly what arrived: use it while precise movement matters, such as a fight. It takes effect with the object's next send, and the switch itself is smoothed over 0.1 seconds, so the object does not jump. See <a href="../guide/network.html#predict">Predict</a>.</p>
+<pre><code>Net.Mob.Exact(id, true)    -- the fight starts
+Net.Mob.Exact(id, false)   -- the fight is over</code></pre>
+</div>
+<div class="note"><b>Events with send-less options</b> keep the same functions. With <code>Latest</code>, <code>Hz</code> or <code>Lod</code>, the newest values are written when the frame ships (with <code>Hz</code> and <code>Lod</code>, only on frames when their timer allows). With <code>Delta</code>, <code>FireAll</code>, <code>FireList</code>, <code>FireExcept</code> and <code>FireNear</code> write to each player separately. <code>Threshold</code>, <code>Predict</code> and <code>Pack</code> change only what travels, not how you call (<code>Predict</code> adds <a href="#at"><code>At</code></a> on the client). See <a href="../guide/network.html#savers">Send less</a>.</div>
 <div class="api" id="client-on">
 <h3>Event.On <span class="tag">client</span></h3>
 <div class="sig">Client.Service.Event.<b>On</b>(listener: (...args) -&gt; ()): () -&gt; ()</div>
 <p>Listens for the event. Returns a function that disconnects the listener. Events that arrived before the first listener are queued and delivered to it.</p>
+</div>
+<div class="api" id="at">
+<h3>Event.At <span class="tag">client · Predict only</span></h3>
+<div class="sig">Client.Service.Event.<b>At</b>(key): ...values?      -- Predict with Key
+Client.Service.Event.<b>At</b>(): ...values?         -- Predict without Key</div>
+<p>The guess for right now: one value for each predicted field, in the order they are declared, or <code>nil</code> before the first update for that key (and after <code>Forget</code>). Each value is the last one that arrived plus its speed times the time since, kept inside the field's declared range; a correction is smoothed over 0.1 seconds. Call it every frame when you draw. See <a href="../guide/network.html#predict">Predict</a>.</p>
+<pre><code>RunService.RenderStepped:Connect(function()
+	for id, part in parts do
+		part.Position = Net.Mob.At(id) or part.Position
+	end
+end)</code></pre>
 </div>
 
 <h2>Client → server events</h2>

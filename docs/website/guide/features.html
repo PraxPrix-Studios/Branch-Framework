@@ -116,6 +116,13 @@ return ShopService</code></pre></li>
 <pre><code>Threshold = { pos = 0.05, hp = 1 },</code></pre>
 <p class="check"><b>How to use it:</b> <a href="network.html#threshold">Networking &rarr; Threshold</a></p>
 
+<h3 id="predict">Predict</h3>
+<p>With Delta: a position travels with its speed and the client keeps it moving between updates. An update goes out only when the client's guess is off by more than the number, so a mob walking in a straight line costs one update. The client draws with <code>At(id)</code>.</p>
+<pre><code>Predict = { pos = 0.25 },          -- the declaration
+local pos = Net.Mob.At(id)         -- client, every frame
+Net.Mob.Exact(id, true)            -- server: no guessing for this mob while it fights</code></pre>
+<p class="check"><b>How to use it:</b> <a href="network.html#predict">Networking &rarr; Predict</a></p>
+
 <h3 id="near">FireNear</h3>
 <p>Every server &rarr; client event can send only to players whose character is within a radius.</p>
 <pre><code>Net.Explosion.FireNear(position, 150, damage)</code></pre>

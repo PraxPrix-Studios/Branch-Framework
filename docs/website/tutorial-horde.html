@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Tutorial: a horde of 200 mobs · Branch</title>
-<meta name="description" content="200 mobs, one player: take the network traffic from 176 KB/s to 10 KB/s by adding a few words to one declaration. Measured at every step.">
+<meta name="description" content="200 mobs, one player: take the network traffic from 176 KB/s to 1.9 KB/s by adding a few words to one declaration. Measured at every step.">
 <link rel="icon" href="assets/mark.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
@@ -38,12 +38,12 @@
 <main class="doc">
 <div class="eyebrow">start/tutorial-horde</div>
 <h1>Tutorial: a horde of <em>200 mobs</em></h1>
-<p class="lead">The server moves 200 mobs and sends them to every player. Sent the plain way, that is 176 KB of traffic a second. Four words in one declaration bring it to 10 KB/s. Every number on this page was measured.</p>
+<p class="lead">The server moves 200 mobs and sends them to every player. Sent the plain way, that is 176 KB of traffic a second. Four words in one declaration bring it to 10 KB/s; one more feature then takes away the far mobs' stutter and brings it to 1.9 KB/s. Every number on this page was measured.</p>
 <div class="cta">
   <a class="btn primary" href="assets/tutorial/Horde.rbxl" download>Download the finished game (.rbxl)</a>
   <a class="btn" href="tutorial.html">The first tutorial</a>
 </div>
-<div class="note"><b>How the numbers were measured:</b> 200 mobs (some walking, the rest resting), one player standing in the middle, 10 seconds at 60 frames a second. The finished game shows 10.6 KB/s in Branch Studio's live profiler in Studio.</div>
+<div class="note"><b>How the numbers were measured:</b> 200 mobs (some walking, the rest resting), one player standing in the middle, 10 seconds at 60 frames a second. The finished game shows 1.9 KB/s in Branch Studio's live profiler in Studio.</div>
 
 <h2>1. The game, the plain way</h2>
 <p>A service keeps 200 mobs. Each walks to a random spot near its home, rests a few seconds, and walks again; resting mobs bob a little, like they breathe. Every frame, the server sends each mob's state to everyone:</p>
@@ -61,7 +61,7 @@ HordeService.Network = {
 local COUNT = 200
 local SPEED = 8 -- studs per second
 
-type Mob = { id: number, pos: Vector3, home: Vector3, target: Vector3?, rest: number, hp: number }
+type Mob = { id: number, pos: Vector3, home: Vector3, target: Vector3?, rest: number, hp: number, push: Vector3? }
 local mobs: { Mob } = {}
 
 local function spot(around: Vector3, radius: number): Vector3
@@ -88,6 +88,13 @@ function HordeService:Start()
 			if mob.hp == 0 then
 				mob.hp = 100
 				mob.pos = spot(mob.home, 40) -- it comes back somewhere else
+			else
+				-- knocked back
+				local away = (mob.pos - root.Position) * Vector3.new(1, 0, 1)
+				if away.Magnitude &gt; 0 then
+					mob.push = away.Unit * 40 -- studs a second, slowing down: about 4 studs in all
+				end
+				mob.target, mob.rest = nil, 1
 			end
 		end
 	end)
@@ -98,6 +105,13 @@ function HordeService:Start()
 	RunService.Heartbeat:Connect(function(dt)
 		clock += dt
 		for _, mob in mobs do
+			if mob.push then
+				mob.pos += mob.push * dt
+				mob.push *= math.exp(-10 * dt)
+				if mob.push.Magnitude &lt; 0.5 then
+					mob.push = nil
+				end
+			end
 			if mob.target then
 				local offset = mob.target - mob.pos
 				if offset.Magnitude &lt;= SPEED * dt then
@@ -221,6 +235,61 @@ return HordeController</code></pre>
 </div>
 <p>KB per second to one player. The game code is the same at every step: only the declaration changed (and <code>FireAll</code> became <code>FireFrom</code> for Lod).</p>
 
+<h2>6. No more stutter: Predict</h2>
+<p>There is a price for those savings: a mob 200 studs away now gets a new position only 4 times a second. The client glides it towards each one, so far mobs lag behind and move in little surges. Even the newest position the player has is, on average, 0.45 studs from where the mob really is. One more feature removes the stutter and cuts the traffic again.</p>
+<p><b>Why.</b> Look at what the 977 updates a second still say. A walking mob goes in a straight line at 8 studs a second for seconds at a time, so almost every update says the same thing: "it went a little further along the same line". The client can work that out itself.</p>
+<p><b>What it does.</b> With <code>Predict</code>, a position travels together with its speed. Between updates the client keeps the mob moving on its own: the last position plus speed times the time since. The server makes the same guess for every player and sends an update only when the real mob is more than 0.25 studs from it. That happens when a mob stops, turns or respawns, so a whole walk costs one update to start it and one to stop it.</p>
+<p><b>How.</b> In the declaration, <code>Predict</code> takes the place of <code>Threshold</code>. The server code does not change at all: it still fires every mob every frame, and Predict decides what to send.</p>
+<pre><code>Mob = {
+	From = "Server",
+	Delta = true, -- only what changed
+	Key = "id", -- each mob keeps its own state
+	Hz = 20, -- the newest state, 20 times a second
+	Predict = { pos = 0.25 }, -- the client guesses; sent when 0.25 studs off
+	Lod = { { 80, 20 }, { 250, 4 } }, -- near: 20/s, far: 4/s, beyond: nothing
+	Data = { id = "u16", pos = "vector", hp = "u8(0..100)" },
+},</code></pre>
+<p>On the client, one block changes: instead of gliding each part towards the last position that arrived, it draws each mob where the guess says it is right now, with <code>Net.Mob.At(id)</code>:</p>
+<span class="file">Controllers/HordeController</span>
+<pre><code>-- every frame, draw each mob where the guess says it is right now
+RunService.RenderStepped:Connect(function()
+	for id, view in views do
+		view.part.Position = Net.Mob.At(id) or view.target
+	end
+end)</code></pre>
+<div class="versus">
+  <div><small>With Lod</small><b>10.3 KB/s</b><span>977 updates a second; far mobs stutter, drawn 0.45 studs off</span></div>
+  <div class="after"><small>With Predict</small><b>1.9 KB/s</b><span>86 updates a second; every mob moves smoothly, drawn 0.12 studs off</span></div>
+</div>
+<ul>
+  <li><strong>Less traffic and smoother movement at once.</strong> Far mobs no longer wait for their 4 updates a second: the client moves them all the time, and a correction arrives only when a mob does something new.</li>
+  <li><strong>Corrections do not snap.</strong> When a mob stops, the client's guess has walked 0.25 studs too far; <code>At</code> slides it back over a tenth of a second. A respawn is a jump of many studs, so it is shown at once instead of sliding across the map.</li>
+  <li><strong>Mobs that leave the Lod range stop.</strong> Past 250 studs the server sends nothing, so the guess stops where the mob was last sent, instead of walking on forever.</li>
+</ul>
+<p>From the plain game, that is 176 KB/s down to 1.9 KB/s: <strong>92× less traffic</strong>. The finished game shows the same 1.9 KB/s in Branch Studio's live profiler.</p>
+
+<h3 id="exact">When a fight starts: Exact</h3>
+<p><b>Why.</b> A guess is fine for a mob walking around, but not for a mob you are fighting: it is knocked back, it dodges, and a hit should land where the mob really is. There, the client should show exactly what the server has, as if <code>Predict</code> were not there.</p>
+<p><b>How.</b> <code>Net.Mob.Exact(id, true)</code> turns the guessing off for one mob: every change is sent every frame, as it is, and the client shows it without guessing. <code>Net.Mob.Exact(id, false)</code> turns it back on. Both switches are smoothed, so the mob does not jump. In the finished game, a hit knocks the mob back and starts a 3-second fight:</p>
+<span class="file">Services/HordeService, in the Hit handler</span>
+<pre><code>-- a fight: knocked back, then sent exactly (no guessing) for 3 seconds
+local away = (mob.pos - root.Position) * Vector3.new(1, 0, 1)
+if away.Magnitude &gt; 0 then
+	mob.push = away.Unit * 40 -- studs a second, slowing down: about 4 studs in all
+end
+mob.target, mob.rest, mob.fight = nil, 1, 3
+Net.Mob.Exact(id, true)</code></pre>
+<span class="file">Services/HordeService, in Heartbeat</span>
+<pre><code>if mob.fight then
+	mob.fight -= dt
+	if mob.fight &lt;= 0 then
+		mob.fight = nil
+		Net.Mob.Exact(mob.id, false) -- the fight is over: back to guessing
+	end
+end</code></pre>
+<p>Only the mobs in a fight cost more; the other 199 keep guessing. Nothing changes on the client: <code>At(id)</code> simply returns the exact position while a mob is in a fight.</p>
+<p><a href="guide/network.html#predict">Predict and Exact in the Networking guide</a></p>
+
 <h2>Bonus: hits that cannot be cheated</h2>
 <p>The finished game lets you click a mob to hit it. The declaration and the server's check:</p>
 <pre><code>Hit = { From = "Client", Rate = "5/s", Data = "u16" }, -- a player hits mob #id</code></pre>
@@ -233,6 +302,14 @@ Net.Hit.On(function(player, id)
 		if mob.hp == 0 then
 			mob.hp = 100
 			mob.pos = spot(mob.home, 40) -- it comes back somewhere else
+		else
+			-- a fight: knocked back, then sent exactly (no guessing) for 3 seconds
+			local away = (mob.pos - root.Position) * Vector3.new(1, 0, 1)
+			if away.Magnitude &gt; 0 then
+				mob.push = away.Unit * 40 -- studs a second, slowing down: about 4 studs in all
+			end
+			mob.target, mob.rest, mob.fight = nil, 1, 3
+			Net.Mob.Exact(id, true)
 		end
 	end
 end)</code></pre>
@@ -240,10 +317,11 @@ end)</code></pre>
   <li><strong><code>Rate = "5/s"</code></strong>: an auto-clicker sending 100 hits a second gets 5 through; <code>OnReject</code> logs the rest.</li>
   <li><strong>The server checks the distance</strong>: a hit from across the map does nothing.</li>
   <li><strong><code>hp = "u8(0..100)"</code></strong>: a declared range. Anything a client could send outside it is refused before your code runs.</li>
+  <li><strong><code>Net.Mob.Exact</code></strong>: a mob that was hit is in a fight for 3 seconds, and is sent exactly while it lasts (see <a href="#exact">Exact</a>).</li>
 </ul>
 <p>One more thing the profiler found: <code>id</code> never goes above 200, so <code>u8</code> would do instead of <code>u16</code>. Try <b>Profile</b> on Branch Studio's Network page and apply it with one click. <a href="guide/network.html#profile">Apply the hints</a></p>
 
-<h2>The finished service</h2>
+<h2>The finished game</h2>
 <span class="file">Services/HordeService</span>
 <pre><code>local RunService = game:GetService("RunService")
 local Branch = require(game.ReplicatedStorage.Packages.Branch)
@@ -256,7 +334,7 @@ HordeService.Network = {
 		Delta = true, -- only what changed
 		Key = "id", -- each mob keeps its own state
 		Hz = 20, -- the newest state, 20 times a second
-		Threshold = { pos = 0.1 }, -- ignore moves under 0.1 studs
+		Predict = { pos = 0.25 }, -- the client guesses; sent when 0.25 studs off
 		Lod = { { 80, 20 }, { 250, 4 } }, -- near: 20/s, far: 4/s, beyond: nothing
 		Data = { id = "u16", pos = "vector", hp = "u8(0..100)" },
 	},
@@ -266,7 +344,7 @@ HordeService.Network = {
 local COUNT = 200
 local SPEED = 8 -- studs per second
 
-type Mob = { id: number, pos: Vector3, home: Vector3, target: Vector3?, rest: number, hp: number }
+type Mob = { id: number, pos: Vector3, home: Vector3, target: Vector3?, rest: number, hp: number, push: Vector3?, fight: number? }
 local mobs: { Mob } = {}
 
 local function spot(around: Vector3, radius: number): Vector3
@@ -293,6 +371,14 @@ function HordeService:Start()
 			if mob.hp == 0 then
 				mob.hp = 100
 				mob.pos = spot(mob.home, 40) -- it comes back somewhere else
+			else
+				-- a fight: knocked back, then sent exactly (no guessing) for 3 seconds
+				local away = (mob.pos - root.Position) * Vector3.new(1, 0, 1)
+				if away.Magnitude &gt; 0 then
+					mob.push = away.Unit * 40 -- studs a second, slowing down: about 4 studs in all
+				end
+				mob.target, mob.rest, mob.fight = nil, 1, 3
+				Net.Mob.Exact(id, true)
 			end
 		end
 	end)
@@ -303,6 +389,20 @@ function HordeService:Start()
 	RunService.Heartbeat:Connect(function(dt)
 		clock += dt
 		for _, mob in mobs do
+			if mob.push then
+				mob.pos += mob.push * dt
+				mob.push *= math.exp(-10 * dt)
+				if mob.push.Magnitude &lt; 0.5 then
+					mob.push = nil
+				end
+			end
+			if mob.fight then
+				mob.fight -= dt
+				if mob.fight &lt;= 0 then
+					mob.fight = nil
+					Net.Mob.Exact(mob.id, false) -- the fight is over: back to guessing
+				end
+			end
 			if mob.target then
 				local offset = mob.target - mob.pos
 				if offset.Magnitude &lt;= SPEED * dt then
@@ -324,6 +424,61 @@ function HordeService:Start()
 end
 
 return HordeService</code></pre>
+<span class="file">Controllers/HordeController</span>
+<pre><code>local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Branch = require(game.ReplicatedStorage.Packages.Branch)
+
+local HordeController = {}
+
+type View = { part: BasePart, target: Vector3 }
+
+function HordeController:Start()
+	local Net = Branch.Network.Client.HordeService
+	local folder = Instance.new("Folder")
+	folder.Name = "Mobs"
+	folder.Parent = workspace
+	local views: { [number]: View } = {}
+
+	-- the server sends states; the client draws a part per mob
+	Net.Mob.On(function(mob)
+		local view = views[mob.id]
+		if not view then
+			local part = Instance.new("Part")
+			part.Name = tostring(mob.id)
+			part.Size = Vector3.new(3, 3, 3)
+			part.Anchored = true
+			part.CanCollide = false
+			part.Position = mob.pos
+			part.Parent = folder
+			view = { part = part, target = mob.pos }
+			views[mob.id] = view
+		end
+		view.target = mob.pos
+		view.part.Color = Color3.fromRGB(255, 70, 70):Lerp(Color3.fromRGB(80, 220, 120), mob.hp / 100)
+	end)
+
+	-- every frame, draw each mob where the guess says it is right now
+	RunService.RenderStepped:Connect(function()
+		for id, view in views do
+			view.part.Position = Net.Mob.At(id) or view.target
+		end
+	end)
+
+	-- click a mob to hit it
+	local mouse = Players.LocalPlayer:GetMouse()
+	UserInputService.InputBegan:Connect(function(input, busy)
+		if not busy and input.UserInputType == Enum.UserInputType.MouseButton1 then
+			local target = mouse.Target
+			if target and target.Parent == folder then
+				Net.Hit.Fire(tonumber(target.Name) :: number)
+			end
+		end
+	end)
+end
+
+return HordeController</code></pre>
 </main>
 </div>
 <script src="assets/site.js"></script>

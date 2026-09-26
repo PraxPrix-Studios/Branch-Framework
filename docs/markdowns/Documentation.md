@@ -169,11 +169,12 @@ local ok = Net.Buy.Invoke("sword")
 | `Delta = true` | A struct travels in full once, then only the fields that changed since the last send to that recipient; a changed boolean costs no bytes. Reliable events only. Listeners always get the full struct. |
 | `Key = "id"` | With `Delta`: the field that tells objects apart, so one event carries many objects, each with its own state. `Event.Forget(key)` drops a key's state on both sides. |
 | `Threshold = { pos = 0.05 }` | With `Delta`: a number or vector that moved less than this counts as unchanged. One number applies to every number and vector field. Small moves add up, so the receiver is never further off than the threshold. |
+| `Predict = { pos = 0.25 }` | With `Delta`, server to client: a number or vector travels with its speed, the client keeps guessing between updates (`Event.At(key)` on the client), and an update goes out only when the guess is off by more than this. A straight walk costs one update; if you stop firing an object to a player, its guess stops where it was fired last. `Event.Exact(key, true)` on the server turns the guessing off for one object (a fight), `Exact(key, false)` turns it back on. |
 | `Pack = true` | Booleans, enums, stepped numbers, whole numbers with a range and bounded lengths are written as bits instead of whole bytes (a `u8(0..100)` is 7 bits). Not with `Delta`, not on functions. |
 | `Rate = "10/s"` | On `From = "Client"` events and functions: sends over the limit are dropped (functions answer "failed"), and `OnReject` hears about it with a reason starting `rate limit:`. |
 
 ```lua
-Mob    = { From = "Server", Delta = true, Key = "id", Threshold = 0.05, Lod = { { 50, 30 }, { 200, 5 } }, Data = { id = "u16", pos = "vector", hp = "u8" } },
+Mob    = { From = "Server", Delta = true, Key = "id", Predict = { pos = 0.25 }, Lod = { { 50, 30 }, { 200, 5 } }, Data = { id = "u16", pos = "vector", hp = "u8" } },
 Bag    = { From = "Server", Pack = true, Data = "{ id: u16(0..1000), count: u8(0..99) }[]" },
 Attack = { From = "Client", Rate = "10/s", Data = { dir = "vector" } },
 ```
