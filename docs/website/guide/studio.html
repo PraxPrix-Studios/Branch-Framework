@@ -32,16 +32,18 @@
 <thead><tr><th>Page</th><th>What it does</th></tr></thead>
 <tbody>
 <tr><td><b>Overview</b></td><td>Install or update the runtime. Live stats. One switch per feature. Problems, including the <a href="#health">health checks</a>: click one to open the script at that line (a smaller-type hint is applied instead). Casing tools.</td></tr>
-<tr><td><b>Network</b></td><td>Every event with its direction, reliability, sync mode, wire signature and bytes per fire, and badges for its send-less options (latest, Hz, lod, delta, pack, rate). A filter box. Click an event to open its declaration. <b>Profile</b> starts a profiling Play session (see below).</td></tr>
+<tr><td><b>Network</b></td><td>Every event with its direction, reliability, sync mode, wire signature and bytes per fire, and badges for its send-less options (latest, Hz, lod, delta, pack, rate). A filter box. Click an event to open its declaration. <b>Profile</b> starts a profiling Play session (see below). The <b>Profiler</b> switch turns the traffic counters on or off for every Play.</td></tr>
 <tr><td><b>Segments</b></td><td>Every service and controller in the order their <code>Init</code> runs, with what each one needs and who uses it. A dependency cycle is red. Click a segment to open it. See <a href="#segments-page">Segments page</a>.</td></tr>
 <tr><td><b>DataStores</b></td><td>Browse stores and keys. Values appear as a virtualised tree, so 50,000 keys scroll as fast as 20. Edit inline or as JSON. Version history with preview and restore. A size meter shows how close a key is to the 4 MB limit. ProfileStore profiles are recognised, including which server holds the session lock. <b>Test migrations</b> runs your migrations on a copy of a save (see <a href="#test-migrations">below</a>). <b>Try sample</b> lets you explore offline.</td></tr>
-<tr><td><b>Settings</b></td><td>Every setting below.</td></tr>
+<tr><td><b>Community</b></td><td>How many games use Branch, the games, people with roles, search any Roblox user, profile cards, your profile code, and for owners the Admin panel. See <a href="#community">Community</a>.</td></tr>
+<tr><td><b>Settings</b></td><td>Four tabs: <b>Appearance</b> (themes, background, colors, layout, lite mode: see <a href="#appearance">Appearance</a>), <b>Project</b>, <b>Network</b> and <b>Editor</b> (every setting below).</td></tr>
 <tr><td><b>Log</b></td><td>Everything the plugin did. Click an entry to open its script.</td></tr>
 </tbody></table></div>
 
 <h2>What it does for you</h2>
 <ul>
   <li><strong>Compiles as you type.</strong> After you pause, the plugin rebuilds typed autocomplete (<code>GetSegment</code>, data paths) and <code>Branch.Network</code>. All outputs land in one undo step, and nothing is written when nothing changed.</li>
+  <li><strong>Segment names as you type.</strong> Inside the quotes of <code>Branch:GetSegment("…")</code> or a <code>LocateSegments({ "…" })</code> list, the script editor suggests your segments: services in server scripts, controllers in client scripts, both in shared modules. It does not depend on the type compiler, so it works with either Luau type solver.</li>
   <li><strong>Feature switches clean up after themselves.</strong> Turning Network off deletes <code>Branch.Network</code> and resets its type. Turning it back on regenerates everything. The same goes for Types and Data types.</li>
   <li><strong>Templates for new modules.</strong> A new segment module is filled from the Service or Controller template, with <code>{NAME}</code> replaced by the module's name. The plugin waits for Studio's own <code>local module = {} return module</code> to land first, so the template is never overwritten. A module renamed to <code>…Service</code> or <code>…Controller</code> while still empty is filled too.</li>
   <li><strong>Smart rename.</strong> Renaming a module carries the new name into your code, in one undo step:
@@ -63,7 +65,7 @@
     <ul>
       <li>Modules are re-read only when their text changed, and networking is regenerated only when a declaration or a network setting changed.</li>
       <li>The wait before a compile grows on slower machines, and only ModuleScripts wake the plugin.</li>
-      <li><b>Reduce motion</b> turns off every animation.</li>
+      <li><b>Lite mode</b> (Settings › Appearance) turns off animations, gradients, see-through panels and the background, and keeps only the open page in memory.</li>
     </ul>
   </li>
   <li><strong>Stays out of the way.</strong> It does nothing in Play mode, and every connection is cleaned up when it unloads.</li>
@@ -92,14 +94,47 @@
 <div class="tbl"><table>
 <thead><tr><th>Tab</th><th>What it shows</th></tr></thead>
 <tbody>
-<tr><td><b>Network</b></td><td>Every event in both directions: sends per second, bytes per second and share of the traffic, busiest first. Hints for numbers that could travel smaller (for example "always a whole number from 0 to 200: declare it as u8 instead of u32"). In a profiling session, <b>Finish</b>. See <a href="network.html#profile">Profile</a>.</td></tr>
+<tr><td><b>Network</b></td><td>Every event in both directions: sends per second, bytes per second and share of the traffic, busiest first. Hints for numbers that could travel smaller (for example "always a whole number from 0 to 200: declare it as u8 instead of u32"). A switch at the top turns the counters off or on for this Play (off: nothing is counted, zero cost). In a profiling session, <b>Finish</b>. See <a href="network.html#profile">Profile</a>.</td></tr>
 <tr><td><b>Startup</b></td><td>How long each segment's <code>Init</code> took, on the server and on your client, in the order they ran. A bar shows which one is slow; a failed <code>Init</code> is red. <code>Init</code> runs one segment at a time, so a slow one delays everything after it.</td></tr>
 <tr><td><b>Data</b></td><td>Every player whose <code>Branch.Data</code> has loaded, and their data as a tree. Click a value to change it: the change goes through <code>Data.Set</code>, so the template checks it like any write, and the game and the player see it at once.</td></tr>
 </tbody></table></div>
-<p>Turn the window off in <b>Settings → Editor → Live window</b>.</p>
+<p>Turn the window off in <b>Settings → Editor → Live window</b>. The traffic counters have their own switch: <b>Profiler</b> on the Network page (the same as <b>Settings → Editor → Network profiler</b>). When either is off, the counters do not run at all.</p>
 
 <h2 id="test-migrations">Test migrations</h2>
 <p>Before you ship a new migration, try it on a real save. On the <b>DataStores</b> page, open a player's key and press <b>Test migrations</b> (the arrow button next to Versions). Studio starts Play for a moment, your game's own <code>Migrations</code> run on a copy of that save, and you see what the player would get: the result as a read-only tree, and either "the result fits the template" or the migration that failed and why. Nothing is written, and the result cannot be restored over the save. The same works on <b>Try sample</b>.</p>
+
+<h2 id="appearance">Appearance</h2>
+<p><b>Settings › Appearance</b> changes how the plugin looks. It is yours alone (saved with your Studio, never in the place), and a friend can take your look with a theme code.</p>
+<div class="tbl"><table>
+<thead><tr><th>Part</th><th>What you can change</th></tr></thead>
+<tbody>
+<tr><td><b>Theme</b></td><td>Auto (follows Studio's light or dark theme), Midnight, Daylight, Graphite, Frost, Ember, Aurora (a gradient with light glass panels), Rose, High contrast. Every theme is checked for readable text.</td></tr>
+<tr><td><b>Background</b></td><td>None, a color, a gradient (up to 6 colors, an angle, an optional very slow drift) or a picture. For a picture: paste its id, or select an ImageLabel, ImageButton or Decal in the Explorer and press <b>Use selected</b> (a Decal id is turned into its image id). Then <b>Blur</b>, <b>Dim</b>, <b>Tint</b> (your accent over it), <b>Fit</b> (Fill, Fit, Tile), <b>Focus</b> (which part stays in view), <b>Keep text readable</b> (a bright picture is dimmed a little more), <b>Match colors to picture</b> and your last five backgrounds. <b>Glass</b> sets how much shows through the panels, <b>Edge shade</b> darkens the top and bottom.</td></tr>
+<tr><td><b>Colors</b></td><td>The 8 main colors, or all 18, each with a color picker and a way back to the theme's own. <b>Copy theme</b> gives a one-line code of letters and digits (<code>BT1-…</code>: colors and background; a picture goes by its id), <b>Paste theme</b> takes one.</td></tr>
+<tr><td><b>Layout</b></td><td>Density (Compact, Comfortable), Corners (Sharp, Soft, Round), Text size (S, M, L).</td></tr>
+<tr><td><b>Performance</b></td><td><b>Lite mode</b> for slower computers, and <b>Animations</b> on or off.</td></tr>
+</tbody></table></div>
+<p><b>Pictures you uploaded</b> (you or your group) get a real blur, Focus and Match colors: Roblox lets plugins read only those. Any other picture still works as a background, with a lighter blur made of a few shifted copies, and the page says so. The blur is made once when you let go of the slider, so it costs nothing while you work; moving Dim or Tint never rebuilds the pages.</p>
+
+<h2 id="community">Community, roles and unlocks</h2>
+<ul>
+  <li><b>My themes</b> (Settings › Appearance): save the current look in a slot and switch back in one click. 2 slots are free; slots 3 to 8 are a game pass each.</li>
+  <li><b>Image backgrounds</b> are a game pass. Colors, gradients and every theme stay free. Without the pass an image background (yours or from a theme code) shows as no background.</li>
+  <li><b>Unlock</b> lists every pass with its price and a link to copy (plugins cannot open the Roblox purchase prompt in Studio). Buy it on roblox.com: while the panel is open the plugin checks every few seconds, so it unlocks right away. Ownership always comes from Roblox.</li>
+  <li><b>Roles</b>: Owner, Tester and VIP. Every role has everything unlocked and can add a profile background. A role shows next to the name; users without one show no badge.</li>
+  <li><b>Community</b> page: how many games use Branch (the games on published profiles), the games built with Branch, the people with roles, and search for any Roblox username. A profile card shows the avatar, role, theme (with <b>Try this theme</b>) and games.</li>
+  <li><b>My profile</b>: show your current theme, add the published experience open in Studio, and (with a role) a background. Only owners publish, so press <b>Copy profile code</b> (<code>BP1-…</code>) and send it to an owner. Profiles have no free text: names come from Roblox and pictures are Roblox images.</li>
+  <li>Roles and profiles live in <code>community/community.json</code> in the public Branch-Framework repository. Owners change them from the <b>Admin</b> panel with their own GitHub token (fine-grained, that repository only, Contents: read and write), which stays on their computer. Everyone reads the file without a token; changes reach everyone within a few minutes.</li>
+</ul>
+
+<h2 id="settings-code">Settings code</h2>
+<p>Your own settings (the look and the Editor tab) are kept per Roblox account on each computer: Roblox has no cloud sync for plugin settings. To take them to another computer or place, use the <b>Settings code</b> card at the bottom of the Settings page (every tab).</p>
+<ul>
+  <li><b>Copy settings code</b> puts every setting in one line of letters and digits (<code>BS1-…</code>), selected for Ctrl+C: your look and editor settings, and this place's project and network settings. Only what differs from the defaults goes in, so it stays short.</li>
+  <li><b>Paste settings code</b>, Enter, then choose what to apply: <b>My settings</b> (only you), <b>This place's settings</b> (for everyone working in this place), or both. Everything the code does not mention goes back to its default, so you get exactly what was copied.</li>
+  <li><b>Last codes</b>: the last 5 codes you copied, each with when and the place it came from, for example <i>27 Sep 17:24 (Arena)</i>. Copy one again or apply it.</li>
+  <li>A code is the settings themselves, not a key to something stored elsewhere: different settings never share a code. The last two characters are a check (CRC-10), so a changed, missing or extra character is reported as a damaged code and never applied.</li>
+</ul>
 
 <h2>Settings</h2>
 <p><b>Project</b> settings are saved in the place, as attributes on <code>ServerStorage</code>: shared with Team Create and invisible to players. <b>Editor</b> settings are yours alone.</p>
@@ -125,13 +160,13 @@
 <tr><td>Network</td><td>Reject NaN / inf</td><td>on</td><td>Drop client numbers that are not finite.</td></tr>
 <tr><td>Templates</td><td>New service / New controller</td><td>built in</td><td>The text of new modules; <code>{NAME}</code> becomes the module's name.</td></tr>
 <tr><td>Casing</td><td>Custom prefix</td><td><code>omo</code></td><td>Prefix for the custom casing button.</td></tr>
-<tr><td>Editor</td><td>Reduce motion</td><td>off</td><td>No animations in the plugin window.</td></tr>
 <tr><td>Editor</td><td>Live window</td><td>on</td><td>While you Play, <a href="#live">Branch (live)</a> shows each event's traffic, every <code>Init</code> time and players' data.</td></tr>
+<tr><td>Editor</td><td>Network profiler</td><td>on</td><td>While you Play, count each event's traffic for Branch (live). Off: the counters do not run at all. Also the <b>Profiler</b> switch on the Network page.</td></tr>
 <tr><td>Editor</td><td>Compile delay (s)</td><td>0.4</td><td>Quiet time after typing before compiling.</td></tr>
 </tbody></table></div>
 
 <h2>Automation</h2>
-<p>Code with plugin permissions can drive the plugin by setting the widget attribute <code>BranchCommand</code> to <code>tab:&lt;page&gt;</code>, <code>compile</code>, <code>install</code>, <code>sample</code>, <code>expandAll</code>, <code>profile</code> (start a profiling session), <code>hint:&lt;n&gt;</code> (apply the n-th type hint) or <code>migrateSample</code> (test migrations on the sample profile). While you Play, the Branch (live) widget's <code>BranchLiveTab</code> attribute picks a tab (<code>Network</code>, <code>Startup</code>, <code>Data</code>).</p>
+<p>Code with plugin permissions can drive the plugin by setting the widget attribute <code>BranchCommand</code> to <code>tab:&lt;page&gt;</code>, <code>compile</code>, <code>install</code>, <code>sample</code>, <code>expandAll</code>, <code>profile</code> (start a profiling session), <code>hint:&lt;n&gt;</code> (apply the n-th type hint), <code>migrateSample</code> (test migrations on the sample profile), <code>look:&lt;theme code&gt;</code> (apply a theme code), <code>appearance:&lt;json&gt;</code> (the whole appearance, lite mode included), <code>section:&lt;tab&gt;</code> (a Settings tab: Appearance, Project, Network, Editor), <code>copySettings</code> / <code>offerSettings</code> / <code>applySettings</code> (the Settings code card's steps), <code>profile:&lt;userId&gt;</code> (open a profile card), <code>unlock</code> (the Unlock panel) or <code>complete</code> (the segment-name suggestions for the open script's cursor, written to the widget's <code>BranchCompleteResult</code> attribute). While you Play, the Branch (live) widget's <code>BranchLiveTab</code> attribute picks a tab (<code>Network</code>, <code>Startup</code>, <code>Data</code>).</p>
 </main>
 </div>
 <script src="../assets/site.js"></script>
