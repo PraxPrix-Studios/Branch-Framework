@@ -16,7 +16,7 @@
 <main class="doc">
 <div class="eyebrow">guide/studio</div>
 <h1>Branch Studio</h1>
-<p class="lead">The free Studio plugin that does the busywork: it installs and updates the runtime, compiles typed autocomplete and networking while you type, and lets you browse and edit DataStores.</p>
+<p class="lead">The free Studio plugin that does the busywork: it installs and updates the runtime, compiles typed autocomplete and networking while you type, finds mistakes before you press Play, shows what your game does while it runs, and lets you browse and edit DataStores.</p>
 
 <h2>Toolbar</h2>
 <div class="tbl"><table>
@@ -31,9 +31,10 @@
 <div class="tbl"><table>
 <thead><tr><th>Page</th><th>What it does</th></tr></thead>
 <tbody>
-<tr><td><b>Overview</b></td><td>Install or update the runtime. Live stats. One switch per feature. Problems: click one to open the script at that line (a smaller-type hint is applied instead). Casing tools.</td></tr>
+<tr><td><b>Overview</b></td><td>Install or update the runtime. Live stats. One switch per feature. Problems, including the <a href="#health">health checks</a>: click one to open the script at that line (a smaller-type hint is applied instead). Casing tools.</td></tr>
 <tr><td><b>Network</b></td><td>Every event with its direction, reliability, sync mode, wire signature and bytes per fire, and badges for its send-less options (latest, Hz, lod, delta, pack, rate). A filter box. Click an event to open its declaration. <b>Profile</b> starts a profiling Play session (see below).</td></tr>
-<tr><td><b>DataStores</b></td><td>Browse stores and keys. Values appear as a virtualised tree, so 50,000 keys scroll as fast as 20. Edit inline or as JSON. Version history with preview and restore. A size meter shows how close a key is to the 4 MB limit. ProfileStore profiles are recognised, including which server holds the session lock. <b>Try sample</b> lets you explore offline.</td></tr>
+<tr><td><b>Segments</b></td><td>Every service and controller in the order their <code>Init</code> runs, with what each one needs and who uses it. A dependency cycle is red. Click a segment to open it. See <a href="#segments-page">Segments page</a>.</td></tr>
+<tr><td><b>DataStores</b></td><td>Browse stores and keys. Values appear as a virtualised tree, so 50,000 keys scroll as fast as 20. Edit inline or as JSON. Version history with preview and restore. A size meter shows how close a key is to the 4 MB limit. ProfileStore profiles are recognised, including which server holds the session lock. <b>Test migrations</b> runs your migrations on a copy of a save (see <a href="#test-migrations">below</a>). <b>Try sample</b> lets you explore offline.</td></tr>
 <tr><td><b>Settings</b></td><td>Every setting below.</td></tr>
 <tr><td><b>Log</b></td><td>Everything the plugin did. Click an entry to open its script.</td></tr>
 </tbody></table></div>
@@ -52,8 +53,8 @@
     Casing tools (PascalCase, camelCase, snake_case, SNAKE_CASE or your own prefix) rename everything the same way and never give two segments the same name.
   </li>
   <li><strong>Safe install and update.</strong> The plugin remembers which runtime files it installed, with a fingerprint of each. On update, files that are no longer shipped are removed, and files you edited by hand are copied to <code>ServerStorage.BranchBackups</code> before they are replaced. Your generated files and settings are kept. A Branch 1 runtime is never touched until you press <b>Update</b>.</li>
-  <li><strong>Live network profiler.</strong> While you Play, a <b>Branch Network (live)</b> window lists every event in both directions: sends per second, bytes per second and share of the traffic, busiest first. Below that are hints for numbers that could travel smaller (for example "always a whole number from 0 to 200: declare it as u8 instead of u32"). The counters only run in Studio.</li>
-  <li><strong>Smaller types in one click.</strong> Press <b>Profile</b> on the Network page, play, then press <b>Finish</b> in the profiler window. The hints appear under Problems; clicking one changes that type in your declaration (one undo step) and compiles again. See <a href="network.html#profile">Apply the hints with one click</a>.</li>
+  <li><strong>Branch (live) while you Play.</strong> One window with the game's traffic, every <code>Init</code> time and players' data. See <a href="#live">Branch (live)</a>.</li>
+  <li><strong>Smaller types in one click.</strong> Press <b>Profile</b> on the Network page, play, then press <b>Finish</b> on the Network tab of Branch (live). The hints appear under Problems; clicking one changes that type in your declaration (one undo step) and compiles again. See <a href="network.html#profile">Apply the hints with one click</a>.</li>
   <li><strong>Live DataStores are read-only.</strong> Browsing real data is safe by default. To edit, save, restore a version or delete, click the lock twice: that allows writes to live data until Studio closes. <b>Try sample</b> stays editable.</li>
   <li><strong>Data template warnings.</strong> The plugin remembers your data template's shape. If a field is removed or changes type (a number becoming a string, say), saved player data will not follow on its own, so a warning in Problems asks for a migration; click it once the migration is written. New fields need nothing: ProfileStore adds them to old saves.</li>
   <li><strong>Honest renames.</strong> References the rename could not update safely — a path through a variable, a chain split across lines — are listed in the Log, with a click to open each one.</li>
@@ -67,6 +68,38 @@
   </li>
   <li><strong>Stays out of the way.</strong> It does nothing in Play mode, and every connection is cleaned up when it unloads.</li>
 </ul>
+
+<h2 id="health">Health checks</h2>
+<p>Every compile also looks for mistakes that would otherwise show up only in a running game. They appear under Problems on the Overview page; click one to open the script at that line. Nothing is run: the checks read your code.</p>
+<div class="tbl"><table>
+<thead><tr><th>Kind</th><th>What it finds</th></tr></thead>
+<tbody>
+<tr><td>error</td><td><strong>Dependency cycle.</strong> <code>A</code> depends on <code>B</code> and <code>B</code> on <code>A</code> (directly or through others): there is no valid order for their <code>Init</code>.</td></tr>
+<tr><td>warning</td><td><strong>A lookup at the top of a module.</strong> <code>Branch:GetSegment("X")</code> outside any function runs while segments are still loading, so it works only if X happened to load first. Look segments up in <code>:Init()</code> or later.</td></tr>
+<tr><td>warning</td><td><strong>A segment used in <code>Init</code> before its own <code>Init</code> ran.</strong> <code>ShopService:Init</code> uses <code>InventoryService</code>, whose <code>Init</code> runs later: add it to <code>Dependencies</code>.</td></tr>
+<tr><td>warning</td><td><strong>A dependency that is not a segment</strong>, or one from the other side (a service depending on a controller).</td></tr>
+<tr><td>warning</td><td><strong><code>WaitForChild</code> without a timeout in <code>Init</code>.</strong> If the child never appears, <code>Init</code> never ends and every segment after it waits.</td></tr>
+<tr><td>hint</td><td><strong>An event nobody uses</strong>: declared but never sent, or sent but never listened to (<code>.On</code>). Strings and comments do not count as uses.</td></tr>
+<tr><td>hint</td><td><strong>Delta with a Key and no <code>Forget</code></strong> anywhere in your code. Fine when the keys are a fixed set (200 mobs that respawn with the same ids); when new objects get new keys, every key ever sent stays in memory. Not shown for Keys with only a few possible values (<code>u8</code>, enums, ranges up to 1000).</td></tr>
+<tr><td>hint</td><td><strong>Client input without limits</strong> (security): client events and functions without <code>Rate</code>, and client-sent strings, buffers or arrays without a maximum length.</td></tr>
+</tbody></table></div>
+
+<h2 id="segments-page">Segments page</h2>
+<p>The <b>Segments</b> page lists services, then controllers, in the order Branch runs their <code>Init</code>: dependencies first, then the order they were found. Each row shows the segment's number in that order, what it needs (its <code>Dependencies</code> and the segments it looks up with <code>GetSegment</code>) and which segments use it. Segments in a cycle are red. The real time each <code>Init</code> took is on the <a href="#live">Startup tab</a> of Branch (live).</p>
+
+<h2 id="live">Branch (live)</h2>
+<p>While you Play in Studio, Branch Studio opens one window, <b>Branch (live)</b>, with three tabs. It only exists in Studio: nothing of it reaches a published game.</p>
+<div class="tbl"><table>
+<thead><tr><th>Tab</th><th>What it shows</th></tr></thead>
+<tbody>
+<tr><td><b>Network</b></td><td>Every event in both directions: sends per second, bytes per second and share of the traffic, busiest first. Hints for numbers that could travel smaller (for example "always a whole number from 0 to 200: declare it as u8 instead of u32"). In a profiling session, <b>Finish</b>. See <a href="network.html#profile">Profile</a>.</td></tr>
+<tr><td><b>Startup</b></td><td>How long each segment's <code>Init</code> took, on the server and on your client, in the order they ran. A bar shows which one is slow; a failed <code>Init</code> is red. <code>Init</code> runs one segment at a time, so a slow one delays everything after it.</td></tr>
+<tr><td><b>Data</b></td><td>Every player whose <code>Branch.Data</code> has loaded, and their data as a tree. Click a value to change it: the change goes through <code>Data.Set</code>, so the template checks it like any write, and the game and the player see it at once.</td></tr>
+</tbody></table></div>
+<p>Turn the window off in <b>Settings → Editor → Live window</b>.</p>
+
+<h2 id="test-migrations">Test migrations</h2>
+<p>Before you ship a new migration, try it on a real save. On the <b>DataStores</b> page, open a player's key and press <b>Test migrations</b> (the arrow button next to Versions). Studio starts Play for a moment, your game's own <code>Migrations</code> run on a copy of that save, and you see what the player would get: the result as a read-only tree, and either "the result fits the template" or the migration that failed and why. Nothing is written, and the result cannot be restored over the save. The same works on <b>Try sample</b>.</p>
 
 <h2>Settings</h2>
 <p><b>Project</b> settings are saved in the place, as attributes on <code>ServerStorage</code>: shared with Team Create and invisible to players. <b>Editor</b> settings are yours alone.</p>
@@ -93,12 +126,12 @@
 <tr><td>Templates</td><td>New service / New controller</td><td>built in</td><td>The text of new modules; <code>{NAME}</code> becomes the module's name.</td></tr>
 <tr><td>Casing</td><td>Custom prefix</td><td><code>omo</code></td><td>Prefix for the custom casing button.</td></tr>
 <tr><td>Editor</td><td>Reduce motion</td><td>off</td><td>No animations in the plugin window.</td></tr>
-<tr><td>Editor</td><td>Live network profiler</td><td>on</td><td>While you Play, a window shows each event's traffic and smaller-type hints.</td></tr>
+<tr><td>Editor</td><td>Live window</td><td>on</td><td>While you Play, <a href="#live">Branch (live)</a> shows each event's traffic, every <code>Init</code> time and players' data.</td></tr>
 <tr><td>Editor</td><td>Compile delay (s)</td><td>0.4</td><td>Quiet time after typing before compiling.</td></tr>
 </tbody></table></div>
 
 <h2>Automation</h2>
-<p>Code with plugin permissions can drive the plugin by setting the widget attribute <code>BranchCommand</code> to <code>tab:&lt;page&gt;</code>, <code>compile</code>, <code>install</code>, <code>sample</code>, <code>expandAll</code>, <code>profile</code> (start a profiling session) or <code>hint:&lt;n&gt;</code> (apply the n-th type hint).</p>
+<p>Code with plugin permissions can drive the plugin by setting the widget attribute <code>BranchCommand</code> to <code>tab:&lt;page&gt;</code>, <code>compile</code>, <code>install</code>, <code>sample</code>, <code>expandAll</code>, <code>profile</code> (start a profiling session), <code>hint:&lt;n&gt;</code> (apply the n-th type hint) or <code>migrateSample</code> (test migrations on the sample profile). While you Play, the Branch (live) widget's <code>BranchLiveTab</code> attribute picks a tab (<code>Network</code>, <code>Startup</code>, <code>Data</code>).</p>
 </main>
 </div>
 <script src="../assets/site.js"></script>

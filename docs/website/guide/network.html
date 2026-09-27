@@ -292,7 +292,7 @@ end)</code></pre></li>
 </ul>
 
 <h2 id="see">See the traffic</h2>
-<p>While you Play in Studio, Branch Studio opens a <b>Branch Network (live)</b> window. It shows:</p>
+<p>While you Play in Studio, Branch Studio opens the <b>Branch (live)</b> window. Its <b>Network</b> tab shows:</p>
 <ul>
   <li><strong>Every event, both directions:</strong> how many times it is sent per second, its bytes per second and its share of the traffic, busiest first. The top rows are where the <a href="#savers">Send less</a> options pay off most.</li>
   <li><strong>Smaller types.</strong> Hints such as "<code>hp</code> is always a whole number from 0 to 200: declare it as <code>u8</code> instead of <code>u32</code> to save 3 B per value".</li>
@@ -301,12 +301,12 @@ end)</code></pre></li>
 <ol>
   <li>On the <b>Network</b> page of Branch Studio, press <b>Profile</b>. Play starts as usual.</li>
   <li>Play the game: fight, buy, die, so every event sends its typical values.</li>
-  <li>In the <b>Branch Network (live)</b> window, press <b>Finish</b>. Play stops and the hints go to Branch Studio.</li>
+  <li>On the Network tab of <b>Branch (live)</b>, press <b>Finish</b>. Play stops and the hints go to Branch Studio.</li>
   <li>On the <b>Overview</b> page, each hint is listed under <b>Problems</b>. Click one: the type in your declaration is changed (one undo step) and the network is compiled again.</li>
 </ol>
 <p>Hints stay under Problems until you apply them, even after Studio restarts. A hint is refused if the declaration changed since (say, the field was renamed), or if the smaller type cannot hold a range you declared. The Log says why.</p>
 <div class="note"><b>Why a Profile button, and not the normal Play?</b> Play runs in a copy of your place, and a Studio plugin cannot pass data from that copy back to the place you edit. Play started with <b>Profile</b> can: <b>Finish</b> ends it and hands the hints back.</div>
-<p>The counters only run in Studio: in a live server they are switched off. Turn the window off in <b>Settings → Editor → Live network profiler</b> (Profile always shows it).</p>
+<p>The counters only run in Studio: in a live server they are switched off. Turn the window off in <b>Settings → Editor → Live window</b> (Profile always shows it).</p>
 
 <h2>Where the code lives</h2>
 <ul>

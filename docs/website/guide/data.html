@@ -105,6 +105,7 @@ Leaderstats = { coins = "Coins", ["stats.kills"] = "Kills" } -- path = display n
   <li><strong>Failures.</strong> Migrations run on a copy. If one fails, the saved data is left exactly as it was, the error names the migration, and the player is asked to rejoin. Data is never saved half-upgraded.</li>
 </ul>
 <div class="note warn"><b>Only append.</b> Never edit or reorder a migration that already shipped: profiles remember which version they reached.</div>
+<p><b>Try a migration before you ship it.</b> <span class="studio" title="Needs the free Branch Studio plugin">needs Branch Studio</span> On the DataStores page, open a player's key and press <b>Test migrations</b>: your migrations run on a copy of that save and you see the result, or the step that fails. Nothing is written. See <a href="studio.html#test-migrations">Test migrations</a>.</p>
 <p><b>Branch Studio reminds you.</b> When you point <b>Settings → Paths → Data template</b> at your template, removing a field or changing its type shows a warning under Problems until you confirm the migration is written. New fields need no migration: old saves get them automatically.</p>
 
 <h2>When a player leaves</h2>

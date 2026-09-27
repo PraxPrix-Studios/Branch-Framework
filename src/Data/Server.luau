@@ -21,6 +21,7 @@
 ]]
 
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
 local Types = require(script.Parent.Parent.Types)
 local DataService = require(script.Parent.DataService)
@@ -216,6 +217,94 @@ function Server.Start(config: Config)
 
 	if config.Leaderstats then
 		bindLeaderstats(leaderstatsList(config.Leaderstats))
+	end
+
+	-- Studio only: Branch Studio's live window (players' data, edits) and its
+	-- migration test reach Branch.Data through this. Live games never make it.
+	if RunService:IsStudio() then
+		-- ProfileStore's own reconcile: missing template keys are filled in (before migrations)
+		local function reconcile(target: any, source: any)
+			for key, value in source do
+				if type(key) == "string" then
+					if target[key] == nil then
+						target[key] = deepCopy(value)
+					elseif type(target[key]) == "table" and type(value) == "table" then
+						reconcile(target[key], value)
+					end
+				end
+			end
+		end
+		local function message(problem: any): string
+			return (string.gsub(tostring(problem), "^[^\n]-:%d+: ", ""))
+		end
+		local ops: { [string]: (...any) -> ...any } = {}
+		function ops.list(): { any }
+			local out = {}
+			for player, data in loaded do
+				table.insert(out, { userId = player.UserId, name = player.Name, data = deepCopy(data) })
+			end
+			table.sort(out, function(a, b)
+				return a.name < b.name
+			end)
+			return out
+		end
+		function ops.set(userId: number, path: string, value: any): (boolean, string?)
+			for player in loaded do
+				if player.UserId == userId then
+					local ok, problem = pcall(Server.Set, player, path, value)
+					return ok, if ok then nil else message(problem)
+				end
+			end
+			return false, "that player's data is not loaded"
+		end
+		-- A dry run on a saved value (a ProfileStore record or plain data): what
+		-- a player with this save would get. Nothing is written anywhere.
+		function ops.migrate(saved: any): { [string]: any }
+			local record = type(saved) == "table" and type(saved.Data) == "table" and type(saved.MetaData) == "table"
+			if not record and type(saved) ~= "table" then
+				return { ok = false, from = 0, to = latest, problem = `the saved value is a {typeof(saved)}, not a table` }
+			end
+			local data = deepCopy(if record then saved.Data else saved)
+			local meta = if record then saved.RobloxMetaData else nil
+			local stored = if type(meta) == "table" then meta.BranchDataVersion else nil
+			local version = if type(stored) == "number" then stored else nil
+			local loads = if record then saved.MetaData.SessionLoadCount else nil
+			if version == nil and type(loads) == "number" and loads <= 1 then
+				version = latest -- a profile that was only just created is already in the newest shape
+			end
+			local from = (version or 0) + 1
+			reconcile(data, template)
+			for index = from, latest do
+				local ok, problem = pcall(migrations[index], data)
+				if not ok then
+					return { ok = false, from = from, to = latest, problem = `Migrations[{index}] failed: {message(problem)}` }
+				end
+			end
+			for key in template do
+				if type(key) == "string" then
+					local ok, problem = pcall(Path.check, template, { key }, data[key])
+					if not ok then
+						return { ok = false, from = from, to = latest, result = data, problem = message(problem) }
+					end
+				end
+			end
+			return { ok = true, from = from, to = latest, result = data }
+		end
+		local serverStorage = game:GetService("ServerStorage")
+		local old = serverStorage:FindFirstChild("BranchDataDebug")
+		if old then
+			old:Destroy()
+		end
+		local bridge = Instance.new("BindableFunction")
+		bridge.Name = "BranchDataDebug"
+		bridge.OnInvoke = function(op: string, ...: any): ...any
+			local handler = ops[op]
+			if not handler then
+				error(`BranchDataDebug: unknown operation "{tostring(op)}"`, 0)
+			end
+			return handler(...)
+		end
+		bridge.Parent = serverStorage
 	end
 end
 

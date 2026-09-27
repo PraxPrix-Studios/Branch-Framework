@@ -332,7 +332,12 @@ function branch.Start(self: Branch, ...: Instance)
 	for index = 1, count do
 		indexOf[names[index]] = index
 	end
-	for _, index in initOrder() do
+	local order = initOrder()
+	local position: { [number]: number } = {}
+	for place, index in order do
+		position[index] = place
+	end
+	for _, index in order do
 		local dependencies = modules[index].Dependencies
 		if type(dependencies) == "table" then
 			for _, dependency in dependencies do
@@ -371,6 +376,18 @@ function branch.Start(self: Branch, ...: Instance)
 	end
 
 	connectHooks()
+
+	-- Studio only: Branch Studio's live window (Startup tab) reads this report.
+	-- The server's attribute replicates to the client; the client's stays local.
+	if RunService:IsStudio() then
+		local lines = table.create(count)
+		for index = 1, count do
+			lines[index] = `{names[index]}|{statuses[index]}|{string.format("%.2f", initTimes[index])}|{position[index] or 0}`
+		end
+		pcall(function()
+			script:SetAttribute(if RunService:IsServer() then "BranchReportServer" else "BranchReportClient", table.concat(lines, "\n"))
+		end)
+	end
 
 	phase = "Started"
 	for _, thread in waiting do

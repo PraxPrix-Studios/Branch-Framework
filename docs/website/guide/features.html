@@ -177,15 +177,15 @@ end)</code></pre>
 <h3 id="bytes">Bytes per fire, before you run <span class="auto">automatic</span></h3>
 <p>Open the plugin's <b>Network</b> page: each event shows its direction, reliability, and how many bytes one send costs. Change a type and watch the number change: it is the fastest way to choose between, say, <code>u16</code> and <code>f32(0..100, 0.5)</code>. Click an event to open its declaration.</p>
 
-<h3 id="profiler">Live network profiler</h3>
+<h3 id="profiler">Live network profiler (Branch (live))</h3>
 <ol class="steps">
-  <li>Press <b>Play</b> in Studio. The <b>Branch Network (live)</b> window opens.</li>
+  <li>Press <b>Play</b> in Studio. The <b>Branch (live)</b> window opens on its <b>Network</b> tab (the <b>Startup</b> and <b>Data</b> tabs are described in <a href="studio.html#live">Branch Studio</a>).</li>
   <li>Play the game normally. Every second the window updates each event, in both directions: sends per second, bytes per second, and share of the total, busiest first.</li>
   <li>Start with the top rows: those events are where savings matter. Typical fixes: <a href="#latest">Latest</a> or <a href="#hz">Hz</a> for events sent every frame, <a href="#lod">Lod</a> for things in the world, <a href="#delta">Delta</a> for state that rarely changes, <a href="#near">FireNear</a> for local effects, <a href="#pack">Pack</a> for lists of small numbers.</li>
 </ol>
 <ul>
   <li><strong>Zero cost in live games.</strong> The counters only run in Studio.</li>
-  <li><strong>Turn it off</strong> in <b>Settings → Editor → Live network profiler</b>.</li>
+  <li><strong>Turn it off</strong> in <b>Settings → Editor → Live window</b>.</li>
 </ul>
 
 <h3 id="hints">Smaller types in one click</h3>
