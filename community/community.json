@@ -1,5 +1,7 @@
 {
   "profiles": {},
-  "roles": {},
+  "roles": {
+    "2326416001": "tester"
+  },
   "version": 1
 }
