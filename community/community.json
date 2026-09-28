@@ -1,5 +1,15 @@
 {
-  "profiles": {},
+  "profiles": {
+    "1525493248": {
+      "games": [
+        {
+          "place": 124815878109925,
+          "universe": 10765121677
+        }
+      ],
+      "theme": "BT1-BDEGQ9"
+    }
+  },
   "roles": {
     "1525493248": "tester",
     "2326416001": "tester"
