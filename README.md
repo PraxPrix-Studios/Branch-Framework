@@ -22,7 +22,7 @@ For real though: Branch splits your game into **services** and **controllers** w
 | [Getting started](https://praxprix-studios.github.io/Branch-Framework/website/getting-started.html) | Install Branch and write your first service and controller. |
 | [Guides](https://praxprix-studios.github.io/Branch-Framework/website/guide/segments.html) | Segments, player data, networking, the Branch Studio plugin, moving from Branch 1. |
 | [API reference](https://praxprix-studios.github.io/Branch-Framework/website/api/branch.html) | Every function with its signature: `Branch`, `Branch.Data`, `Branch.Network`, the network types and the utilities. |
-| [Benchmarks](https://praxprix-studios.github.io/Branch-Framework/website/benchmarks.html) | Branch vs NetRay and Blink, measured in Lune and in the real engine. |
+| [Benchmarks](https://praxprix-studios.github.io/Branch-Framework/website/benchmarks.html) | Branch vs NetRay, Blink, BlinkBlox, QuickNet and Warp, measured in Lune and in the real engine. |
 
 ## Install
 
@@ -41,7 +41,9 @@ Branch:Start(script.Parent:WaitForChild("Controllers"))
 ```
 
 ## Branch benchmarks
-Branch vs NetRay and Blink, measured in Lune and in the real engine (Roblox Studio).
+Branch vs NetRay, Blink, BlinkBlox, QuickNet and Warp, measured in Lune and in the real engine (Roblox Studio).
+
+Run them yourself (no plugin needed): `lune run bench/bench.luau` and `lune run bench/rivals/run`. More in [bench/README.md](/bench/README.md).
 
 [![Look it here](https://img.shields.io/badge/Look_it_here-%E2%86%92-7A5AF0?style=for-the-badge)](https://praxprix-studios.github.io/Branch-Framework/website/benchmarks.html)
 

@@ -9,6 +9,7 @@
 -- DO NOT EDIT: this module is rewritten on every network compile.
 -- Declare events in your services: Service.Network = { Event = { From = ..., Data = ... } }
 local bit32_btest = bit32.btest
+local bit32_lshift = bit32.lshift
 local buffer_copy = buffer.copy
 local buffer_create = buffer.create
 local buffer_len = buffer.len
@@ -20,6 +21,7 @@ local buffer_writef32 = buffer.writef32
 local buffer_writeu16 = buffer.writeu16
 local buffer_writeu8 = buffer.writeu8
 local math_max = math.max
+local math_min = math.min
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -41,6 +43,8 @@ local NAMES: { string } = {}
 local RESPONSE_ID: { number } = {}
 local READ_R: { any } = {}
 local READ_U: { any } = {}
+local RUN_R: { any } = {} -- run readers: a run of one event in one call
+local RUN_U: { any } = {}
 local HANDLERS: { any } = {}
 local RESPOND: { any } = {}
 local DSEND: { any } = {} -- Delta: per event, per player, what they hold
@@ -57,7 +61,12 @@ local GATE: { any } = {} -- Hz / Lod: seconds between sends, per ring
 local GDUE: { any } = {}
 local LOD: { any } = {} -- Lod: ring distances
 
-local PROFILE = false -- built without the Studio profiler
+-- Studio-only traffic counters for Branch (live). The BranchProfile attribute
+-- on Branch.Network switches them while you Play (false = off: nothing is
+-- counted or published). Never on in a live server.
+local PROFILE_ALLOWED = false -- built without the Studio profiler
+local PROFILE = false
+local PROOT: any = Root
 local SNAMES: { string } = {}
 local PS_COUNT: { [number]: number } = {}
 local PS_BYTES: { [number]: number } = {}
@@ -107,11 +116,37 @@ local function publish()
 	for k, s in PNUM do
 		out[#out + 1] = `N|{k}|{s[1]}|{s[2]}|{s[3]}|{s[4]}`
 	end
-	(Root :: any):SetAttribute("BranchNetStatsServer", table.concat(out, "\n"))
+	PROOT:SetAttribute("BranchNetStatsServer", table.concat(out, "\n"))
 end
 
-if PROFILE and (Root :: any).SetAttribute ~= nil then
-	RunService.Heartbeat:Connect(publish)
+local publishing: RBXScriptConnection? = nil
+local function setProfile(on: boolean)
+	if on == PROFILE then
+		return
+	end
+	PROFILE = on
+	if on then
+		publishing = RunService.Heartbeat:Connect(publish)
+	else
+		if publishing then
+			publishing:Disconnect()
+			publishing = nil
+		end
+		table.clear(PS_COUNT)
+		table.clear(PS_BYTES)
+		table.clear(PR_COUNT)
+		table.clear(PR_BYTES)
+		table.clear(PNUM)
+		lastPublish = -1
+		PROOT:SetAttribute("BranchNetStatsServer", nil)
+	end
+end
+
+if PROFILE_ALLOWED and PROOT.SetAttribute ~= nil then
+	setProfile(PROOT:GetAttribute("BranchProfile") ~= false)
+	PROOT:GetAttributeChangedSignal("BranchProfile"):Connect(function()
+		setProfile(PROOT:GetAttribute("BranchProfile") ~= false)
+	end)
 end
 
 -- FireNear: players whose character's PrimaryPart is within `radius`.
@@ -142,6 +177,50 @@ local function rvar(b: buffer, c: number, first: number): (number, number)
 	end
 	error("varint too long", 0)
 end
+
+-- the 8 booleans of every byte value, for decoding boolean arrays
+local BOOL_ROWS: { { boolean } } = table.create(256)
+for byteValue = 0, 255 do
+	local row = table.create(8)
+	for bit = 0, 7 do
+		row[bit + 1] = bit32_btest(byteValue, bit32_lshift(1, bit))
+	end
+	BOOL_ROWS[byteValue + 1] = table.freeze(row)
+end
+
+-- Rows or bit tests for boolean arrays: whichever this VM runs faster (bit
+-- tests natively, rows interpreted). Timed once, about 50 microseconds.
+local ROWS_WIN = (function(): boolean
+	local probe = buffer_create(128)
+	for index = 0, 127 do
+		buffer_writeu8(probe, index, (index * 37 + 11) % 256)
+	end
+	local target = table.create(1024, false)
+	local bitsTime, rowsTime = math.huge, math.huge
+	for _ = 1, 6 do
+		local t0 = os.clock()
+		for k = 0, 127 do
+			local byte = buffer_readu8(probe, k)
+			local j = k * 8
+			target[j + 1] = bit32_btest(byte, 1)
+			target[j + 2] = bit32_btest(byte, 2)
+			target[j + 3] = bit32_btest(byte, 4)
+			target[j + 4] = bit32_btest(byte, 8)
+			target[j + 5] = bit32_btest(byte, 16)
+			target[j + 6] = bit32_btest(byte, 32)
+			target[j + 7] = bit32_btest(byte, 64)
+			target[j + 8] = bit32_btest(byte, 128)
+		end
+		local t1 = os.clock()
+		for k = 0, 127 do
+			table.move(BOOL_ROWS[buffer_readu8(probe, k) + 1], 1, 8, k * 8 + 1, target)
+		end
+		local t2 = os.clock()
+		bitsTime = math_min(bitsTime, t1 - t0)
+		rowsTime = math_min(rowsTime, t2 - t1)
+	end
+	return rowsTime < bitsTime
+end)()
 
 -- Send state: the stream currently being written.
 local buf: buffer = buffer_create(0)
@@ -203,6 +282,12 @@ local runTo: { number } = {}
 local runHead: { boolean } = {}
 
 local function pack(src: buffer, n: number, starts: { number }, count: number): buffer
+	if count == 1 then
+		-- one event: no runs to find, one exact copy
+		local out = buffer_create(n)
+		buffer_copy(out, 0, src, 0, n)
+		return out
+	end
 	local runs = 0
 	local size = n
 	local i = 1
@@ -392,9 +477,30 @@ local function writeBack()
 	openS = 0
 end
 
+-- Pending single events: a player's first event of the frame, when it has a fixed size of at
+-- most 256 bytes and no Instances, goes straight into a buffer of exactly its size, kept here
+-- while the stream itself stays empty (and is not the open one). A frame that sends nothing
+-- else to that stream ships the buffer as it is. Anything else written to the stream first
+-- moves it in (promote), so the stream holds exactly what it always did.
+local pend: { buffer? } = {}
+
+local function promote(s: number)
+	local b = pend[s] :: buffer
+	pend[s] = nil
+	local n = buffer_len(b)
+	buffer_copy(sBuf[s], 0, b, 0, n) -- a stream's buffer never holds less than 256 bytes
+	sCur[s], sEvn[s] = n, 1
+	sLast[s] = if n > 1 then buffer_readu8(b, 0) else 0 -- an id alone never repeats
+	sEvs[s][1] = 0
+	sRun[s], sExtra[s] = 1, 0
+end
+
 local function openStream(s: number)
 	if s ~= openS then
 		writeBack()
+		if pend[s] then
+			promote(s)
+		end
 		buf, cap, cur, refs, refn, evs, evn, last = sBuf[s], sCap[s], sCur[s], sRefs[s], sRefn[s], sEvs[s], sEvn[s], sLast[s]
 		openS = s
 	end
@@ -560,6 +666,17 @@ end
 
 -- Ships one stream now (end of frame, or right away for function replies).
 local function ship(s: number)
+	local single = pend[s]
+	if single then
+		-- the stream is empty while one is pending: the single is all there is
+		pend[s] = nil
+		if s % 2 == 1 then
+			Reliable:FireClient(slotPlayer[(s + 1) // 2], single)
+		else
+			Unreliable:FireClient(slotPlayer[(s + 1) // 2], single)
+		end
+		return
+	end
 	local n = sCur[s]
 	if n == 0 then
 		return
@@ -624,7 +741,32 @@ local function flush()
 	for index = 1, dirtyCount do
 		local s = dirty[index]
 		sDirty[s] = false
-		ship(s)
+		local single = pend[s]
+		if single then
+			pend[s] = nil
+			if s % 2 == 1 then
+				Reliable:FireClient(slotPlayer[(s + 1) // 2], single)
+			else
+				Unreliable:FireClient(slotPlayer[(s + 1) // 2], single)
+			end
+			continue
+		end
+		local n = sCur[s]
+		if n > 0 and sEvn[s] == 1 and sRefn[s] == 0 then
+			-- one event, no Instances (the common case of state sent to each
+			-- player): one exact copy, sent, and the stream is empty again
+			local out = buffer_create(n)
+			buffer_copy(out, 0, sBuf[s], 0, n)
+			if s % 2 == 1 then
+				Reliable:FireClient(slotPlayer[(s + 1) // 2], out)
+			else
+				Unreliable:FireClient(slotPlayer[(s + 1) // 2], out)
+				sExtra[s], sRun[s] = 0, 0
+			end
+			sCur[s], sEvn[s], sLast[s] = 0, 0, 0
+		else
+			ship(s)
+		end
 	end
 	dirtyCount = 0
 	-- FireAll arenas go last: they only hold events fired after every
@@ -667,6 +809,7 @@ Players.PlayerRemoving:Connect(function(player: Player)
 	end
 	slotOf[player] = nil
 	for s = 2 * k - 1, 2 * k do
+		pend[s] = nil
 		sCur[s] = 0
 		sRefn[s] = 0
 		sEvn[s] = 0
@@ -705,14 +848,20 @@ local function trace(message: any): { string }
 	return { text, debug.traceback(text, 2) }
 end
 
-local function process(player: Player, b: buffer, r: { any }, len: number, readers: { any }, st: { any }, c: number, ri: number)
+local function process(player: Player, b: buffer, r: { any }, len: number, readers: { any }, runs: { any }, st: { any }, c: number, ri: number)
 	-- finish a run that a throwing listener cut short
 	local left = st[3]
 	if left > 0 then
-		local reader = st[4]
-		for index = left - 1, 0, -1 do
-			st[3] = index
-			c, ri = reader(player, b, c, r, ri, st)
+		local runner = st[5]
+		if runner then
+			c, ri = runner(player, b, c, r, ri, st, left)
+			st[5] = false
+		else
+			local reader = st[4]
+			for index = left - 1, 0, -1 do
+				st[3] = index
+				c, ri = reader(player, b, c, r, ri, st)
+			end
 		end
 		st[3] = 0
 	end
@@ -735,10 +884,17 @@ local function process(player: Player, b: buffer, r: { any }, len: number, reade
 				error(`bad run of event {id}`, 0)
 			end
 			local bodies = c
-			st[4] = reader
-			for index = count - 1, 0, -1 do
-				st[3] = index
-				c, ri = reader(player, b, c, r, ri, st)
+			local runner = runs[id]
+			if runner then
+				st[5] = runner
+				c, ri = runner(player, b, c, r, ri, st, count)
+				st[5] = false
+			else
+				st[4] = reader
+				for index = count - 1, 0, -1 do
+					st[3] = index
+					c, ri = reader(player, b, c, r, ri, st)
+				end
 			end
 			st[3] = 0
 			if c - bodies < count then
@@ -754,7 +910,7 @@ local function process(player: Player, b: buffer, r: { any }, len: number, reade
 	end
 end
 
-local function receiver(readers: { any })
+local function receiver(readers: { any }, runs: { any })
 	return function(player: Player, b: any, r: any)
 		if typeof(b) ~= "buffer" or (r ~= nil and type(r) ~= "table") then
 			rejected(player, "wrong argument types")
@@ -766,10 +922,10 @@ local function receiver(readers: { any })
 			return
 		end
 		local refs = r or EMPTY
-		local st = { -1, 0, 0, false }
+		local st = { -1, 0, 0, false, false }
 		local c, ri = 0, 0
 		while true do
-			local ok, problem = xpcall(process, trace, player, b, refs, len, readers, st, c, ri)
+			local ok, problem = xpcall(process, trace, player, b, refs, len, readers, runs, st, c, ri)
 			if ok then
 				return
 			end
@@ -921,40 +1077,97 @@ NAMES[1] = "Bench.Booleans"
 rebuild(1)
 READ_R[1] = function(p: Player, b: buffer, c: number, r: { any }, ri: number, st: { any }): (number, number)
 	local p0 = c
-	local n2 = buffer_readu8(b, c)
+	local n_2 = buffer_readu8(b, c)
 	c += 1
-	if n2 >= 128 then n2, c = rvar(b, c, n2) end
-	if n2 > 1000 then error(ERR, 0) end
-	if (n2 + 7) // 8 > buffer_len(b) - c then error(ERR, 0) end
-	local arr3 = table.create(n2)
-	local j6 = 0
-	for _ = 1, n2 // 8 do
-		local byte5 = buffer_readu8(b, c)
-		c += 1
-		arr3[j6 + 1] = bit32_btest(byte5, 1)
-		arr3[j6 + 2] = bit32_btest(byte5, 2)
-		arr3[j6 + 3] = bit32_btest(byte5, 4)
-		arr3[j6 + 4] = bit32_btest(byte5, 8)
-		arr3[j6 + 5] = bit32_btest(byte5, 16)
-		arr3[j6 + 6] = bit32_btest(byte5, 32)
-		arr3[j6 + 7] = bit32_btest(byte5, 64)
-		arr3[j6 + 8] = bit32_btest(byte5, 128)
-		j6 += 8
-	end
-	local rest7 = n2 - j6
-	if rest7 > 0 then
-		local byte5 = buffer_readu8(b, c)
-		c += 1
-		for i4 = 1, rest7 do
-			arr3[j6 + i4] = bit32_btest(byte5, 2 ^ (i4 - 1))
+	if n_2 >= 128 then n_2, c = rvar(b, c, n_2) end
+	if n_2 > 1000 then error(ERR, 0) end
+	if (n_2 + 7) // 8 > buffer_len(b) - c then error(ERR, 0) end
+	local arr_3 = table.create(n_2)
+	local j_6 = 0
+	if ROWS_WIN then
+		for _ = 1, n_2 // 8 do
+			table.move(BOOL_ROWS[buffer_readu8(b, c) + 1], 1, 8, j_6 + 1, arr_3)
+			c += 1
+			j_6 += 8
+		end
+	else
+		for _ = 1, n_2 // 8 do
+			local byte_5 = buffer_readu8(b, c)
+			c += 1
+			arr_3[j_6 + 1] = bit32_btest(byte_5, 1)
+			arr_3[j_6 + 2] = bit32_btest(byte_5, 2)
+			arr_3[j_6 + 3] = bit32_btest(byte_5, 4)
+			arr_3[j_6 + 4] = bit32_btest(byte_5, 8)
+			arr_3[j_6 + 5] = bit32_btest(byte_5, 16)
+			arr_3[j_6 + 6] = bit32_btest(byte_5, 32)
+			arr_3[j_6 + 7] = bit32_btest(byte_5, 64)
+			arr_3[j_6 + 8] = bit32_btest(byte_5, 128)
+			j_6 += 8
 		end
 	end
-	local x1 = arr3
-	local a1 = x1
+	local rest_7 = n_2 - j_6
+	if rest_7 > 0 then
+		local byte_5 = buffer_readu8(b, c)
+		c += 1
+		for i_4 = 1, rest_7 do
+			arr_3[j_6 + i_4] = bit32_btest(byte_5, 2 ^ (i_4 - 1))
+		end
+	end
+	local x_1 = arr_3
+	local a1 = x_1
 	if PROFILE then precv(1, c - p0) end
 	st[1], st[2] = c, ri
 	ON[1](p, a1)
 	st[1] = -1
+	return c, ri
+end
+RUN_R[1] = function(p: Player, b: buffer, c: number, r: { any }, ri: number, st: { any }, count: number): (number, number)
+	for index = count - 1, 0, -1 do
+		st[3] = index
+		local p0 = c
+		local n_9 = buffer_readu8(b, c)
+		c += 1
+		if n_9 >= 128 then n_9, c = rvar(b, c, n_9) end
+		if n_9 > 1000 then error(ERR, 0) end
+		if (n_9 + 7) // 8 > buffer_len(b) - c then error(ERR, 0) end
+		local arr_10 = table.create(n_9)
+		local j_13 = 0
+		if ROWS_WIN then
+			for _ = 1, n_9 // 8 do
+				table.move(BOOL_ROWS[buffer_readu8(b, c) + 1], 1, 8, j_13 + 1, arr_10)
+				c += 1
+				j_13 += 8
+			end
+		else
+			for _ = 1, n_9 // 8 do
+				local byte_12 = buffer_readu8(b, c)
+				c += 1
+				arr_10[j_13 + 1] = bit32_btest(byte_12, 1)
+				arr_10[j_13 + 2] = bit32_btest(byte_12, 2)
+				arr_10[j_13 + 3] = bit32_btest(byte_12, 4)
+				arr_10[j_13 + 4] = bit32_btest(byte_12, 8)
+				arr_10[j_13 + 5] = bit32_btest(byte_12, 16)
+				arr_10[j_13 + 6] = bit32_btest(byte_12, 32)
+				arr_10[j_13 + 7] = bit32_btest(byte_12, 64)
+				arr_10[j_13 + 8] = bit32_btest(byte_12, 128)
+				j_13 += 8
+			end
+		end
+		local rest_14 = n_9 - j_13
+		if rest_14 > 0 then
+			local byte_12 = buffer_readu8(b, c)
+			c += 1
+			for i_11 = 1, rest_14 do
+				arr_10[j_13 + i_11] = bit32_btest(byte_12, 2 ^ (i_11 - 1))
+			end
+		end
+		local x_8 = arr_10
+		local a1 = x_8
+		if PROFILE then precv(1, c - p0) end
+		st[1], st[2] = c, ri
+		ON[1](p, a1)
+		st[1] = -1
+	end
 	return c, ri
 end
 
@@ -965,31 +1178,63 @@ NAMES[2] = "Bench.Cars"
 rebuild(2)
 READ_R[2] = function(p: Player, b: buffer, c: number, r: { any }, ri: number, st: { any }): (number, number)
 	local p0 = c
-	local m14 = buffer_readu8(b, c)
-	local x11 = bit32_btest(m14, 1)
-	local x10 = buffer_readu16(b, c + 1)
-	local x12 = buffer_readu8(b, c + 3)
-	local x13 = buffer_readf64(b, c + 4)
-	if x13 ~= x13 or x13 == INF or x13 == -INF then error(ERR, 0) end
+	local m_21 = buffer_readu8(b, c)
+	local x_18 = bit32_btest(m_21, 1)
+	local x_17 = buffer_readu16(b, c + 1)
+	local x_19 = buffer_readu8(b, c + 3)
+	local x_20 = buffer_readf64(b, c + 4)
+	if x_20 ~= x_20 or x_20 == INF or x_20 == -INF then error(ERR, 0) end
 	c += 12
-	local n15 = buffer_readu8(b, c)
+	local n_22 = buffer_readu8(b, c)
 	c += 1
-	if n15 >= 128 then n15, c = rvar(b, c, n15) end
-	local s16 = buffer_readstring(b, c, n15)
-	c += n15
-	local x8 = s16
-	local n17 = buffer_readu8(b, c)
+	if n_22 >= 128 then n_22, c = rvar(b, c, n_22) end
+	local s_23 = buffer_readstring(b, c, n_22)
+	c += n_22
+	local x_15 = s_23
+	local n_24 = buffer_readu8(b, c)
 	c += 1
-	if n17 >= 128 then n17, c = rvar(b, c, n17) end
-	local s18 = buffer_readstring(b, c, n17)
-	c += n17
-	local x9 = s18
-	local a1 = { brand = x8, carName = x9, carId = x10, available = x11, dealers = x12, price = x13 }
+	if n_24 >= 128 then n_24, c = rvar(b, c, n_24) end
+	local s_25 = buffer_readstring(b, c, n_24)
+	c += n_24
+	local x_16 = s_25
+	local a1 = { brand = x_15, carName = x_16, carId = x_17, available = x_18, dealers = x_19, price = x_20 }
 	if PROFILE then precv(2, c - p0) end
 	if PROFILE then pnum(2, "carId", (a1 :: any).carId, "u16", NAMES); pnum(2, "dealers", (a1 :: any).dealers, "u8", NAMES); pnum(2, "price", (a1 :: any).price, "f64", NAMES) end
 	st[1], st[2] = c, ri
 	ON[2](p, a1)
 	st[1] = -1
+	return c, ri
+end
+RUN_R[2] = function(p: Player, b: buffer, c: number, r: { any }, ri: number, st: { any }, count: number): (number, number)
+	for index = count - 1, 0, -1 do
+		st[3] = index
+		local p0 = c
+		local m_32 = buffer_readu8(b, c)
+		local x_29 = bit32_btest(m_32, 1)
+		local x_28 = buffer_readu16(b, c + 1)
+		local x_30 = buffer_readu8(b, c + 3)
+		local x_31 = buffer_readf64(b, c + 4)
+		if x_31 ~= x_31 or x_31 == INF or x_31 == -INF then error(ERR, 0) end
+		c += 12
+		local n_33 = buffer_readu8(b, c)
+		c += 1
+		if n_33 >= 128 then n_33, c = rvar(b, c, n_33) end
+		local s_34 = buffer_readstring(b, c, n_33)
+		c += n_33
+		local x_26 = s_34
+		local n_35 = buffer_readu8(b, c)
+		c += 1
+		if n_35 >= 128 then n_35, c = rvar(b, c, n_35) end
+		local s_36 = buffer_readstring(b, c, n_35)
+		c += n_35
+		local x_27 = s_36
+		local a1 = { brand = x_26, carName = x_27, carId = x_28, available = x_29, dealers = x_30, price = x_31 }
+		if PROFILE then precv(2, c - p0) end
+		if PROFILE then pnum(2, "carId", (a1 :: any).carId, "u16", NAMES); pnum(2, "dealers", (a1 :: any).dealers, "u8", NAMES); pnum(2, "price", (a1 :: any).price, "f64", NAMES) end
+		st[1], st[2] = c, ri
+		ON[2](p, a1)
+		st[1] = -1
+	end
 	return c, ri
 end
 
@@ -1000,21 +1245,43 @@ NAMES[3] = "Bench.Chat"
 rebuild(3)
 READ_R[3] = function(p: Player, b: buffer, c: number, r: { any }, ri: number, st: { any }): (number, number)
 	local p0 = c
-	local x20 = buffer_readu8(b, c)
+	local x_38 = buffer_readu8(b, c)
 	c += 1
-	local n21 = buffer_readu8(b, c)
+	local n_39 = buffer_readu8(b, c)
 	c += 1
-	if n21 >= 128 then n21, c = rvar(b, c, n21) end
-	local s22 = buffer_readstring(b, c, n21)
-	c += n21
-	local x19 = s22
-	local a1 = x19
-	local a2 = x20
+	if n_39 >= 128 then n_39, c = rvar(b, c, n_39) end
+	local s_40 = buffer_readstring(b, c, n_39)
+	c += n_39
+	local x_37 = s_40
+	local a1 = x_37
+	local a2 = x_38
 	if PROFILE then precv(3, c - p0) end
 	if PROFILE then pnum(3, "value2", a2, "u8", NAMES) end
 	st[1], st[2] = c, ri
 	ON[3](p, a1, a2)
 	st[1] = -1
+	return c, ri
+end
+RUN_R[3] = function(p: Player, b: buffer, c: number, r: { any }, ri: number, st: { any }, count: number): (number, number)
+	for index = count - 1, 0, -1 do
+		st[3] = index
+		local p0 = c
+		local x_42 = buffer_readu8(b, c)
+		c += 1
+		local n_43 = buffer_readu8(b, c)
+		c += 1
+		if n_43 >= 128 then n_43, c = rvar(b, c, n_43) end
+		local s_44 = buffer_readstring(b, c, n_43)
+		c += n_43
+		local x_41 = s_44
+		local a1 = x_41
+		local a2 = x_42
+		if PROFILE then precv(3, c - p0) end
+		if PROFILE then pnum(3, "value2", a2, "u8", NAMES) end
+		st[1], st[2] = c, ri
+		ON[3](p, a1, a2)
+		st[1] = -1
+	end
 	return c, ri
 end
 
@@ -1025,28 +1292,57 @@ NAMES[4] = "Bench.Entities"
 rebuild(4)
 READ_R[4] = function(p: Player, b: buffer, c: number, r: { any }, ri: number, st: { any }): (number, number)
 	local p0 = c
-	local n24 = buffer_readu8(b, c)
+	local n_46 = buffer_readu8(b, c)
 	c += 1
-	if n24 >= 128 then n24, c = rvar(b, c, n24) end
-	if n24 > 1000 then error(ERR, 0) end
-	if n24 * 6 > buffer_len(b) - c then error(ERR, 0) end
-	local arr25 = table.create(n24)
-	for i26 = 1, n24 do
-		local x27 = buffer_readu8(b, c)
-		local x28 = buffer_readu8(b, c + 1)
-		local x29 = buffer_readu8(b, c + 2)
-		local x30 = buffer_readu8(b, c + 3)
-		local x31 = buffer_readu8(b, c + 4)
-		local x32 = buffer_readu8(b, c + 5)
+	if n_46 >= 128 then n_46, c = rvar(b, c, n_46) end
+	if n_46 > 1000 then error(ERR, 0) end
+	if n_46 * 6 > buffer_len(b) - c then error(ERR, 0) end
+	local arr_47 = table.create(n_46)
+	for i_48 = 1, n_46 do
+		local x_49 = buffer_readu8(b, c)
+		local x_50 = buffer_readu8(b, c + 1)
+		local x_51 = buffer_readu8(b, c + 2)
+		local x_52 = buffer_readu8(b, c + 3)
+		local x_53 = buffer_readu8(b, c + 4)
+		local x_54 = buffer_readu8(b, c + 5)
 		c += 6
-		arr25[i26] = { id = x27, x = x28, y = x29, z = x30, orientation = x31, animation = x32 }
+		arr_47[i_48] = { id = x_49, x = x_50, y = x_51, z = x_52, orientation = x_53, animation = x_54 }
 	end
-	local x23 = arr25
-	local a1 = x23
+	local x_45 = arr_47
+	local a1 = x_45
 	if PROFILE then precv(4, c - p0) end
 	st[1], st[2] = c, ri
 	ON[4](p, a1)
 	st[1] = -1
+	return c, ri
+end
+RUN_R[4] = function(p: Player, b: buffer, c: number, r: { any }, ri: number, st: { any }, count: number): (number, number)
+	for index = count - 1, 0, -1 do
+		st[3] = index
+		local p0 = c
+		local n_56 = buffer_readu8(b, c)
+		c += 1
+		if n_56 >= 128 then n_56, c = rvar(b, c, n_56) end
+		if n_56 > 1000 then error(ERR, 0) end
+		if n_56 * 6 > buffer_len(b) - c then error(ERR, 0) end
+		local arr_57 = table.create(n_56)
+		for i_58 = 1, n_56 do
+			local x_59 = buffer_readu8(b, c)
+			local x_60 = buffer_readu8(b, c + 1)
+			local x_61 = buffer_readu8(b, c + 2)
+			local x_62 = buffer_readu8(b, c + 3)
+			local x_63 = buffer_readu8(b, c + 4)
+			local x_64 = buffer_readu8(b, c + 5)
+			c += 6
+			arr_57[i_58] = { id = x_59, x = x_60, y = x_61, z = x_62, orientation = x_63, animation = x_64 }
+		end
+		local x_55 = arr_57
+		local a1 = x_55
+		if PROFILE then precv(4, c - p0) end
+		st[1], st[2] = c, ri
+		ON[4](p, a1)
+		st[1] = -1
+	end
 	return c, ri
 end
 
@@ -1079,23 +1375,54 @@ local Services = {
 		Moves = table.freeze({
 			Fire = function(player: Player, a1: { pos: Vector3, vel: Vector3, yaw: number, grounded: boolean, crouch: boolean, sprint: boolean, anim: number })
 				if PROFILE then pnum(1, "yaw", (a1 :: any).yaw, "f32"); pnum(1, "anim", (a1 :: any).anim, "u8") end
-				local s = target(player, 1)
-				if not s then return end
+				if openS < 0 then writeBack() end
+				if bCur[1] > 0 then materialize(1) end
+				local k = slotOf[player] or slot(player)
+				if not k then return end
+				local s = 2 * k - 2 + 1
+				if s ~= openS and sCur[s] == 0 and pend[s] == nil then
+					local b, c, rn, c0 = buffer_create(31), 0, 0, 0
+					local cap = 31
+					local more = false
+					if c + 31 > cap then b = grow(c, c + 31) end
+					if more then c -= 1 else buffer_writeu8(b, c, 1) end
+					local m_65 = (if a1.grounded then 1 else 0) + (if a1.crouch then 2 else 0) + (if a1.sprint then 4 else 0)
+					buffer_writeu8(b, c + 1, m_65)
+					local vec_66 = a1.pos
+					buffer_writef32(b, c + 2, vec_66.X)
+					buffer_writef32(b, c + 6, vec_66.Y)
+					buffer_writef32(b, c + 10, vec_66.Z)
+					local vec_67 = a1.vel
+					buffer_writef32(b, c + 14, vec_67.X)
+					buffer_writef32(b, c + 18, vec_67.Y)
+					buffer_writef32(b, c + 22, vec_67.Z)
+					buffer_writef32(b, c + 26, a1.yaw)
+					buffer_writeu8(b, c + 30, a1.anim)
+					c += 31
+					pend[s] = b
+					if PROFILE then psent(1, c - c0) end
+					if not sDirty[s] then
+						sDirty[s] = true
+						dirtyCount += 1
+						dirty[dirtyCount] = s
+					end
+					return
+				end
 				openStream(s)
 				local b, c, rn, c0 = buf, cur, refn, cur
 				local more = last == 1
 				if c + 31 > cap then b = grow(c, c + 31) end
 				if more then c -= 1 else buffer_writeu8(b, c, 1) end
-				local m33 = (if a1.grounded then 1 else 0) + (if a1.crouch then 2 else 0) + (if a1.sprint then 4 else 0)
-				buffer_writeu8(b, c + 1, m33)
-				local vec34 = a1.pos
-				buffer_writef32(b, c + 2, vec34.X)
-				buffer_writef32(b, c + 6, vec34.Y)
-				buffer_writef32(b, c + 10, vec34.Z)
-				local vec35 = a1.vel
-				buffer_writef32(b, c + 14, vec35.X)
-				buffer_writef32(b, c + 18, vec35.Y)
-				buffer_writef32(b, c + 22, vec35.Z)
+				local m_68 = (if a1.grounded then 1 else 0) + (if a1.crouch then 2 else 0) + (if a1.sprint then 4 else 0)
+				buffer_writeu8(b, c + 1, m_68)
+				local vec_69 = a1.pos
+				buffer_writef32(b, c + 2, vec_69.X)
+				buffer_writef32(b, c + 6, vec_69.Y)
+				buffer_writef32(b, c + 10, vec_69.Z)
+				local vec_70 = a1.vel
+				buffer_writef32(b, c + 14, vec_70.X)
+				buffer_writef32(b, c + 18, vec_70.Y)
+				buffer_writef32(b, c + 22, vec_70.Z)
 				buffer_writef32(b, c + 26, a1.yaw)
 				buffer_writeu8(b, c + 30, a1.anim)
 				c += 31
@@ -1112,16 +1439,16 @@ local Services = {
 				local more = last == 1
 				if c + 31 > cap then b = grow(c, c + 31) end
 				if more then c -= 1 else buffer_writeu8(b, c, 1) end
-				local m36 = (if a1.grounded then 1 else 0) + (if a1.crouch then 2 else 0) + (if a1.sprint then 4 else 0)
-				buffer_writeu8(b, c + 1, m36)
-				local vec37 = a1.pos
-				buffer_writef32(b, c + 2, vec37.X)
-				buffer_writef32(b, c + 6, vec37.Y)
-				buffer_writef32(b, c + 10, vec37.Z)
-				local vec38 = a1.vel
-				buffer_writef32(b, c + 14, vec38.X)
-				buffer_writef32(b, c + 18, vec38.Y)
-				buffer_writef32(b, c + 22, vec38.Z)
+				local m_71 = (if a1.grounded then 1 else 0) + (if a1.crouch then 2 else 0) + (if a1.sprint then 4 else 0)
+				buffer_writeu8(b, c + 1, m_71)
+				local vec_72 = a1.pos
+				buffer_writef32(b, c + 2, vec_72.X)
+				buffer_writef32(b, c + 6, vec_72.Y)
+				buffer_writef32(b, c + 10, vec_72.Z)
+				local vec_73 = a1.vel
+				buffer_writef32(b, c + 14, vec_73.X)
+				buffer_writef32(b, c + 18, vec_73.Y)
+				buffer_writef32(b, c + 22, vec_73.Z)
 				buffer_writef32(b, c + 26, a1.yaw)
 				buffer_writeu8(b, c + 30, a1.anim)
 				c += 31
@@ -1138,16 +1465,16 @@ local Services = {
 				local more = last == 1
 				if c + 31 > cap then b = grow(c, c + 31) end
 				if more then c -= 1 else buffer_writeu8(b, c, 1) end
-				local m39 = (if a1.grounded then 1 else 0) + (if a1.crouch then 2 else 0) + (if a1.sprint then 4 else 0)
-				buffer_writeu8(b, c + 1, m39)
-				local vec40 = a1.pos
-				buffer_writef32(b, c + 2, vec40.X)
-				buffer_writef32(b, c + 6, vec40.Y)
-				buffer_writef32(b, c + 10, vec40.Z)
-				local vec41 = a1.vel
-				buffer_writef32(b, c + 14, vec41.X)
-				buffer_writef32(b, c + 18, vec41.Y)
-				buffer_writef32(b, c + 22, vec41.Z)
+				local m_74 = (if a1.grounded then 1 else 0) + (if a1.crouch then 2 else 0) + (if a1.sprint then 4 else 0)
+				buffer_writeu8(b, c + 1, m_74)
+				local vec_75 = a1.pos
+				buffer_writef32(b, c + 2, vec_75.X)
+				buffer_writef32(b, c + 6, vec_75.Y)
+				buffer_writef32(b, c + 10, vec_75.Z)
+				local vec_76 = a1.vel
+				buffer_writef32(b, c + 14, vec_76.X)
+				buffer_writef32(b, c + 18, vec_76.Y)
+				buffer_writef32(b, c + 22, vec_76.Z)
 				buffer_writef32(b, c + 26, a1.yaw)
 				buffer_writeu8(b, c + 30, a1.anim)
 				c += 31
@@ -1166,16 +1493,16 @@ local Services = {
 				local more = last == 1
 				if c + 31 > cap then b = grow(c, c + 31) end
 				if more then c -= 1 else buffer_writeu8(b, c, 1) end
-				local m42 = (if a1.grounded then 1 else 0) + (if a1.crouch then 2 else 0) + (if a1.sprint then 4 else 0)
-				buffer_writeu8(b, c + 1, m42)
-				local vec43 = a1.pos
-				buffer_writef32(b, c + 2, vec43.X)
-				buffer_writef32(b, c + 6, vec43.Y)
-				buffer_writef32(b, c + 10, vec43.Z)
-				local vec44 = a1.vel
-				buffer_writef32(b, c + 14, vec44.X)
-				buffer_writef32(b, c + 18, vec44.Y)
-				buffer_writef32(b, c + 22, vec44.Z)
+				local m_77 = (if a1.grounded then 1 else 0) + (if a1.crouch then 2 else 0) + (if a1.sprint then 4 else 0)
+				buffer_writeu8(b, c + 1, m_77)
+				local vec_78 = a1.pos
+				buffer_writef32(b, c + 2, vec_78.X)
+				buffer_writef32(b, c + 6, vec_78.Y)
+				buffer_writef32(b, c + 10, vec_78.Z)
+				local vec_79 = a1.vel
+				buffer_writef32(b, c + 14, vec_79.X)
+				buffer_writef32(b, c + 18, vec_79.Y)
+				buffer_writef32(b, c + 22, vec_79.Z)
 				buffer_writef32(b, c + 26, a1.yaw)
 				buffer_writeu8(b, c + 30, a1.anim)
 				c += 31
@@ -1194,16 +1521,16 @@ local Services = {
 				local more = last == 1
 				if c + 31 > cap then b = grow(c, c + 31) end
 				if more then c -= 1 else buffer_writeu8(b, c, 1) end
-				local m45 = (if a1.grounded then 1 else 0) + (if a1.crouch then 2 else 0) + (if a1.sprint then 4 else 0)
-				buffer_writeu8(b, c + 1, m45)
-				local vec46 = a1.pos
-				buffer_writef32(b, c + 2, vec46.X)
-				buffer_writef32(b, c + 6, vec46.Y)
-				buffer_writef32(b, c + 10, vec46.Z)
-				local vec47 = a1.vel
-				buffer_writef32(b, c + 14, vec47.X)
-				buffer_writef32(b, c + 18, vec47.Y)
-				buffer_writef32(b, c + 22, vec47.Z)
+				local m_80 = (if a1.grounded then 1 else 0) + (if a1.crouch then 2 else 0) + (if a1.sprint then 4 else 0)
+				buffer_writeu8(b, c + 1, m_80)
+				local vec_81 = a1.pos
+				buffer_writef32(b, c + 2, vec_81.X)
+				buffer_writef32(b, c + 6, vec_81.Y)
+				buffer_writef32(b, c + 10, vec_81.Z)
+				local vec_82 = a1.vel
+				buffer_writef32(b, c + 14, vec_82.X)
+				buffer_writef32(b, c + 18, vec_82.Y)
+				buffer_writef32(b, c + 22, vec_82.Z)
 				buffer_writef32(b, c + 26, a1.yaw)
 				buffer_writeu8(b, c + 30, a1.anim)
 				c += 31
@@ -1218,24 +1545,55 @@ local Services = {
 		MovesU = table.freeze({
 			Fire = function(player: Player, a1: { pos: Vector3, vel: Vector3, yaw: number, grounded: boolean, crouch: boolean, sprint: boolean, anim: number })
 				if PROFILE then pnum(2, "yaw", (a1 :: any).yaw, "f32"); pnum(2, "anim", (a1 :: any).anim, "u8") end
-				local s = target(player, 2)
-				if not s then return end
+				if openS < 0 then writeBack() end
+				if bCur[2] > 0 then materialize(2) end
+				local k = slotOf[player] or slot(player)
+				if not k then return end
+				local s = 2 * k - 2 + 2
+				if s ~= openS and sCur[s] == 0 and pend[s] == nil then
+					local b, c, rn, c0 = buffer_create(31), 0, 0, 0
+					local cap = 31
+					local more = false
+					if c + 31 > cap then b = grow(c, c + 31) end
+					if more then c -= 1 else buffer_writeu8(b, c, 2) end
+					local m_83 = (if a1.grounded then 1 else 0) + (if a1.crouch then 2 else 0) + (if a1.sprint then 4 else 0)
+					buffer_writeu8(b, c + 1, m_83)
+					local vec_84 = a1.pos
+					buffer_writef32(b, c + 2, vec_84.X)
+					buffer_writef32(b, c + 6, vec_84.Y)
+					buffer_writef32(b, c + 10, vec_84.Z)
+					local vec_85 = a1.vel
+					buffer_writef32(b, c + 14, vec_85.X)
+					buffer_writef32(b, c + 18, vec_85.Y)
+					buffer_writef32(b, c + 22, vec_85.Z)
+					buffer_writef32(b, c + 26, a1.yaw)
+					buffer_writeu8(b, c + 30, a1.anim)
+					c += 31
+					pend[s] = b
+					if PROFILE then psent(2, c - c0) end
+					if not sDirty[s] then
+						sDirty[s] = true
+						dirtyCount += 1
+						dirty[dirtyCount] = s
+					end
+					return
+				end
 				openStream(s)
 				local start, refStart = cur, refn
 				local b, c, rn, c0 = buf, cur, refn, cur
 				local more = last == 2
 				if c + 31 > cap then b = grow(c, c + 31) end
 				if more then c -= 1 else buffer_writeu8(b, c, 2) end
-				local m48 = (if a1.grounded then 1 else 0) + (if a1.crouch then 2 else 0) + (if a1.sprint then 4 else 0)
-				buffer_writeu8(b, c + 1, m48)
-				local vec49 = a1.pos
-				buffer_writef32(b, c + 2, vec49.X)
-				buffer_writef32(b, c + 6, vec49.Y)
-				buffer_writef32(b, c + 10, vec49.Z)
-				local vec50 = a1.vel
-				buffer_writef32(b, c + 14, vec50.X)
-				buffer_writef32(b, c + 18, vec50.Y)
-				buffer_writef32(b, c + 22, vec50.Z)
+				local m_86 = (if a1.grounded then 1 else 0) + (if a1.crouch then 2 else 0) + (if a1.sprint then 4 else 0)
+				buffer_writeu8(b, c + 1, m_86)
+				local vec_87 = a1.pos
+				buffer_writef32(b, c + 2, vec_87.X)
+				buffer_writef32(b, c + 6, vec_87.Y)
+				buffer_writef32(b, c + 10, vec_87.Z)
+				local vec_88 = a1.vel
+				buffer_writef32(b, c + 14, vec_88.X)
+				buffer_writef32(b, c + 18, vec_88.Y)
+				buffer_writef32(b, c + 22, vec_88.Z)
 				buffer_writef32(b, c + 26, a1.yaw)
 				buffer_writeu8(b, c + 30, a1.anim)
 				c += 31
@@ -1253,16 +1611,16 @@ local Services = {
 				local more = last == 2
 				if c + 31 > cap then b = grow(c, c + 31) end
 				if more then c -= 1 else buffer_writeu8(b, c, 2) end
-				local m51 = (if a1.grounded then 1 else 0) + (if a1.crouch then 2 else 0) + (if a1.sprint then 4 else 0)
-				buffer_writeu8(b, c + 1, m51)
-				local vec52 = a1.pos
-				buffer_writef32(b, c + 2, vec52.X)
-				buffer_writef32(b, c + 6, vec52.Y)
-				buffer_writef32(b, c + 10, vec52.Z)
-				local vec53 = a1.vel
-				buffer_writef32(b, c + 14, vec53.X)
-				buffer_writef32(b, c + 18, vec53.Y)
-				buffer_writef32(b, c + 22, vec53.Z)
+				local m_89 = (if a1.grounded then 1 else 0) + (if a1.crouch then 2 else 0) + (if a1.sprint then 4 else 0)
+				buffer_writeu8(b, c + 1, m_89)
+				local vec_90 = a1.pos
+				buffer_writef32(b, c + 2, vec_90.X)
+				buffer_writef32(b, c + 6, vec_90.Y)
+				buffer_writef32(b, c + 10, vec_90.Z)
+				local vec_91 = a1.vel
+				buffer_writef32(b, c + 14, vec_91.X)
+				buffer_writef32(b, c + 18, vec_91.Y)
+				buffer_writef32(b, c + 22, vec_91.Z)
 				buffer_writef32(b, c + 26, a1.yaw)
 				buffer_writeu8(b, c + 30, a1.anim)
 				c += 31
@@ -1280,16 +1638,16 @@ local Services = {
 				local more = last == 2
 				if c + 31 > cap then b = grow(c, c + 31) end
 				if more then c -= 1 else buffer_writeu8(b, c, 2) end
-				local m54 = (if a1.grounded then 1 else 0) + (if a1.crouch then 2 else 0) + (if a1.sprint then 4 else 0)
-				buffer_writeu8(b, c + 1, m54)
-				local vec55 = a1.pos
-				buffer_writef32(b, c + 2, vec55.X)
-				buffer_writef32(b, c + 6, vec55.Y)
-				buffer_writef32(b, c + 10, vec55.Z)
-				local vec56 = a1.vel
-				buffer_writef32(b, c + 14, vec56.X)
-				buffer_writef32(b, c + 18, vec56.Y)
-				buffer_writef32(b, c + 22, vec56.Z)
+				local m_92 = (if a1.grounded then 1 else 0) + (if a1.crouch then 2 else 0) + (if a1.sprint then 4 else 0)
+				buffer_writeu8(b, c + 1, m_92)
+				local vec_93 = a1.pos
+				buffer_writef32(b, c + 2, vec_93.X)
+				buffer_writef32(b, c + 6, vec_93.Y)
+				buffer_writef32(b, c + 10, vec_93.Z)
+				local vec_94 = a1.vel
+				buffer_writef32(b, c + 14, vec_94.X)
+				buffer_writef32(b, c + 18, vec_94.Y)
+				buffer_writef32(b, c + 22, vec_94.Z)
 				buffer_writef32(b, c + 26, a1.yaw)
 				buffer_writeu8(b, c + 30, a1.anim)
 				c += 31
@@ -1308,16 +1666,16 @@ local Services = {
 				local more = last == 2
 				if c + 31 > cap then b = grow(c, c + 31) end
 				if more then c -= 1 else buffer_writeu8(b, c, 2) end
-				local m57 = (if a1.grounded then 1 else 0) + (if a1.crouch then 2 else 0) + (if a1.sprint then 4 else 0)
-				buffer_writeu8(b, c + 1, m57)
-				local vec58 = a1.pos
-				buffer_writef32(b, c + 2, vec58.X)
-				buffer_writef32(b, c + 6, vec58.Y)
-				buffer_writef32(b, c + 10, vec58.Z)
-				local vec59 = a1.vel
-				buffer_writef32(b, c + 14, vec59.X)
-				buffer_writef32(b, c + 18, vec59.Y)
-				buffer_writef32(b, c + 22, vec59.Z)
+				local m_95 = (if a1.grounded then 1 else 0) + (if a1.crouch then 2 else 0) + (if a1.sprint then 4 else 0)
+				buffer_writeu8(b, c + 1, m_95)
+				local vec_96 = a1.pos
+				buffer_writef32(b, c + 2, vec_96.X)
+				buffer_writef32(b, c + 6, vec_96.Y)
+				buffer_writef32(b, c + 10, vec_96.Z)
+				local vec_97 = a1.vel
+				buffer_writef32(b, c + 14, vec_97.X)
+				buffer_writef32(b, c + 18, vec_97.Y)
+				buffer_writef32(b, c + 22, vec_97.Z)
 				buffer_writef32(b, c + 26, a1.yaw)
 				buffer_writeu8(b, c + 30, a1.anim)
 				c += 31
@@ -1336,16 +1694,16 @@ local Services = {
 				local more = last == 2
 				if c + 31 > cap then b = grow(c, c + 31) end
 				if more then c -= 1 else buffer_writeu8(b, c, 2) end
-				local m60 = (if a1.grounded then 1 else 0) + (if a1.crouch then 2 else 0) + (if a1.sprint then 4 else 0)
-				buffer_writeu8(b, c + 1, m60)
-				local vec61 = a1.pos
-				buffer_writef32(b, c + 2, vec61.X)
-				buffer_writef32(b, c + 6, vec61.Y)
-				buffer_writef32(b, c + 10, vec61.Z)
-				local vec62 = a1.vel
-				buffer_writef32(b, c + 14, vec62.X)
-				buffer_writef32(b, c + 18, vec62.Y)
-				buffer_writef32(b, c + 22, vec62.Z)
+				local m_98 = (if a1.grounded then 1 else 0) + (if a1.crouch then 2 else 0) + (if a1.sprint then 4 else 0)
+				buffer_writeu8(b, c + 1, m_98)
+				local vec_99 = a1.pos
+				buffer_writef32(b, c + 2, vec_99.X)
+				buffer_writef32(b, c + 6, vec_99.Y)
+				buffer_writef32(b, c + 10, vec_99.Z)
+				local vec_100 = a1.vel
+				buffer_writef32(b, c + 14, vec_100.X)
+				buffer_writef32(b, c + 18, vec_100.Y)
+				buffer_writef32(b, c + 22, vec_100.Z)
 				buffer_writef32(b, c + 26, a1.yaw)
 				buffer_writeu8(b, c + 30, a1.anim)
 				c += 31
@@ -1360,8 +1718,8 @@ local Services = {
 	}),
 }
 
-Reliable.OnServerEvent:Connect(receiver(READ_R))
-Unreliable.OnServerEvent:Connect(receiver(READ_U))
+Reliable.OnServerEvent:Connect(receiver(READ_R, RUN_R))
+Unreliable.OnServerEvent:Connect(receiver(READ_U, RUN_U))
 
 return table.freeze({
 	Services = table.freeze(Services),

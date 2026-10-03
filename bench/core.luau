@@ -130,6 +130,10 @@ return function(host: any)
 		for index = 1, clientCount do
 			local client: any = {}
 			local player = host.newPlayer(index, instancePlayers)
+			if type(player) == "table" then
+				-- a player in the game is a child of Players (Branch sends nothing to one who left)
+				player.Parent = Players
+			end
 			world.clientOf[player] = client
 			client.player = player
 			local remotes: any = {}
@@ -285,7 +289,12 @@ return function(host: any)
 		})
 	end
 
-	local noop = function() end
+	-- every listener counts what arrives: a library that drops events fails its
+	-- row instead of looking fast
+	local arrived = 0
+	local noop = function()
+		arrived += 1
+	end
 
 	local WORKLOADS = {
 		{
@@ -294,6 +303,7 @@ return function(host: any)
 			direction = "up",
 			listen = function(api) api.Cars.On(noop) end,
 			fire = function(api) for index = 1, 50 do api.Cars.Fire(cars[index]) end end,
+			expect = 50,
 		},
 		{
 			name = "1000 booleans x10 per frame",
@@ -301,6 +311,7 @@ return function(host: any)
 			direction = "up",
 			listen = function(api) api.Booleans.On(noop) end,
 			fire = function(api) for _ = 1, 10 do api.Booleans.Fire(booleans) end end,
+			expect = 10,
 		},
 		{
 			name = "Entities: 100 small structs x10 per frame",
@@ -308,6 +319,7 @@ return function(host: any)
 			direction = "up",
 			listen = function(api) api.Entities.On(noop) end,
 			fire = function(api) for _ = 1, 10 do api.Entities.Fire(entities) end end,
+			expect = 10,
 		},
 		{
 			name = "Chat: (string, u8) x500 per frame",
@@ -315,6 +327,7 @@ return function(host: any)
 			direction = "up",
 			listen = function(api) api.Chat.On(noop) end,
 			fire = function(api) for index = 1, 500 do api.Chat.Fire("hello there", index % 256) end end,
+			expect = 500,
 		},
 		{
 			name = "Moves: server -> 1 player x500 per frame",
@@ -322,6 +335,7 @@ return function(host: any)
 			direction = "down",
 			listenClient = function(api) api.Moves.On(noop) end,
 			fireServer = function(api, world) local p = world.players[1] for _ = 1, 500 do api.Moves.Fire(p, move) end end,
+			expect = 500,
 		},
 		{
 			name = "Moves: FireAll to 20 players x50 per frame",
@@ -329,6 +343,7 @@ return function(host: any)
 			direction = "down",
 			listenClient = function(api) api.Moves.On(noop) end,
 			fireServer = function(api) for _ = 1, 50 do api.Moves.FireAll(move) end end,
+			expect = 50 * 20,
 		},
 		{
 			name = "Unreliable moves x200 per frame",
@@ -336,6 +351,7 @@ return function(host: any)
 			direction = "down",
 			listenClient = function(api) api.MovesU.On(noop) end,
 			fireServer = function(api, world) local p = world.players[1] for _ = 1, 200 do api.MovesU.Fire(p, move) end end,
+			expect = 200,
 			unreliable = true,
 		},
 	}
@@ -355,6 +371,7 @@ return function(host: any)
 		local encode, decode = 0, 0
 		local maxPacket = 0
 		for frame = 1, WARMUP + FRAMES do
+			arrived = 0
 			if frame == WARMUP + 1 then
 				encode, decode = 0, 0
 				world.bytesUp, world.bytesDown, world.callsUp, world.callsDown = 0, 0, 0, 0
@@ -381,6 +398,9 @@ return function(host: any)
 			local t2 = os.clock()
 			encode += t1 - t0
 			decode += t2 - t1
+			if arrived ~= workload.expect then
+				error(`frame {frame}: {arrived} of {workload.expect} events arrived`)
+			end
 		end
 
 		local up = workload.direction == "up"

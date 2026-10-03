@@ -29,8 +29,10 @@
 	attribute on this module; Branch:Start(root, { SegmentRule = ... })
 	overrides it.
 
-	Branch.Network / Branch.Data load on first use. Branch Studio keeps the
-	block between the BRANCH_GENERATED markers in sync with your project.
+	Branch.Network / Branch.Data load on first use. Branch.Keybinds is the
+	Keybinds folder of Roblox input actions (contexts > actions > bindings)
+	that Branch Studio's Keybinds page edits. Branch Studio keeps the block
+	between the BRANCH_GENERATED markers in sync with your project.
 ]]
 
 local Players = game:GetService("Players")
@@ -41,6 +43,7 @@ local Types = require(script.Types)
 -- BRANCH_GENERATED_START
 -- Managed by Branch Studio; edits between these markers are overwritten.
 type NetworkApi = any
+type KeybindsApi = any
 -- BRANCH_GENERATED_END
 
 export type Phase = "Idle" | "Loading" | "Initializing" | "Started"
@@ -62,6 +65,7 @@ export type Branch = {
 	GetReport: (self: Branch) -> { SegmentReport },
 	Network: NetworkApi,
 	Data: typeof(require(script.Data)),
+	Keybinds: KeybindsApi,
 }
 
 -- Segment registry (Structure of Arrays; index = load order).
@@ -437,7 +441,8 @@ function branch.GetReport(self: Branch): { SegmentReport }
 	return report
 end
 
--- Network / Data load lazily so games that do not use them pay nothing.
+-- Network / Data load lazily so games that do not use them pay nothing;
+-- Keybinds is looked up once.
 setmetatable(branch, {
 	__index = function(self: any, key: string): any
 		if key == "Network" then
@@ -452,6 +457,13 @@ setmetatable(branch, {
 			local data = require(script.Data)
 			rawset(self, "Data", data)
 			return data
+		elseif key == "Keybinds" then
+			local folder = script:FindFirstChild("Keybinds")
+			if not folder then
+				error("Branch.Keybinds does not exist yet: add a context on Branch Studio's Keybinds page", 2)
+			end
+			rawset(self, "Keybinds", folder)
+			return folder
 		end
 		error(`Branch.{tostring(key)} does not exist`, 2)
 	end,

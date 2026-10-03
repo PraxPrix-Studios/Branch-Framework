@@ -1,0 +1,99 @@
+option ClientOutput = "../src/shared/blink/Client.luau"
+option ServerOutput = "../src/shared/blink/Server.luau"
+
+-- The bench fires 1000 events a frame, up to 600 KB of Entities, and measures throughput, so the
+-- inbound limits a live server wants are raised to fit it. With the defaults -- 64 events and 8192
+-- bytes a packet, 64 KB a second per player -- the server refuses most of what the bench sends.
+option MaxPacketSize = 2097152
+option MaxEventsPerPacket = 2048
+option InboundBytesPerSecond = 1073741824
+option InboundBurst = 1073741824
+
+struct Entity {
+    id: u8,
+    x: u8,
+    y: u8,
+    z: u8,
+    orientation: u8,
+    animation: u8
+}
+
+event Booleans {
+    From: Client,
+    Type: Reliable,
+    Call: SingleSync,
+    Data: boolean[0..1000]
+}
+
+event Entities {
+    From: Client,
+    Type: Reliable,
+    Call: SingleSync,
+    Data: Entity[0..1000]
+}
+
+-- The same two payloads, different in every event: see src/shared/benches/BooleansRandom.luau.
+event BooleansRandom {
+    From: Client,
+    Type: Reliable,
+    Call: SingleSync,
+    Data: boolean[0..1000]
+}
+
+event EntitiesRandom {
+    From: Client,
+    Type: Reliable,
+    Call: SingleSync,
+    Data: Entity[0..1000]
+}
+
+-- One byte of payload, where the cost of an event is its framing, dispatch and guards rather than its
+-- data. Timed by Runtime.luau only; Studio's harness has no bench of this name and skips it.
+event Tiny {
+    From: Client,
+    Type: Reliable,
+    Call: SingleSync,
+    Data: u8
+}
+
+struct Car {
+    brand: string,
+    carName: string,
+    carId: u16,
+    available: boolean,
+    dealers: u8,
+    price: f64
+}
+
+-- Branch's own bench: the entity of NetRay's Benchmark.rbxl (src/shared/benches/Cars.luau).
+event Cars {
+    From: Client,
+    Type: Reliable,
+    Call: SingleSync,
+    Data: Car
+}
+
+struct Move {
+    pos: vector,
+    vel: vector,
+    yaw: f32,
+    grounded: boolean,
+    crouch: boolean,
+    sprint: boolean,
+    anim: u8
+}
+
+-- Server to client, for the Studio harness's down benches (src/shared/downbenches.luau).
+event Moves {
+    From: Server,
+    Type: Reliable,
+    Call: SingleSync,
+    Data: Move
+}
+
+event MovesU {
+    From: Server,
+    Type: Unreliable,
+    Call: SingleSync,
+    Data: Move
+}

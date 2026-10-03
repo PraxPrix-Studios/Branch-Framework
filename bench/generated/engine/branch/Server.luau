@@ -42,6 +42,8 @@ local NAMES: { string } = {}
 local RESPONSE_ID: { number } = {}
 local READ_R: { any } = {}
 local READ_U: { any } = {}
+local RUN_R: { any } = {} -- run readers: a run of one event in one call
+local RUN_U: { any } = {}
 local HANDLERS: { any } = {}
 local RESPOND: { any } = {}
 local DSEND: { any } = {} -- Delta: per event, per player, what they hold
@@ -58,7 +60,12 @@ local GATE: { any } = {} -- Hz / Lod: seconds between sends, per ring
 local GDUE: { any } = {}
 local LOD: { any } = {} -- Lod: ring distances
 
-local PROFILE = false -- built without the Studio profiler
+-- Studio-only traffic counters for Branch (live). The BranchProfile attribute
+-- on Branch.Network switches them while you Play (false = off: nothing is
+-- counted or published). Never on in a live server.
+local PROFILE_ALLOWED = false -- built without the Studio profiler
+local PROFILE = false
+local PROOT: any = Root
 local SNAMES: { string } = {}
 local PS_COUNT: { [number]: number } = {}
 local PS_BYTES: { [number]: number } = {}
@@ -108,11 +115,37 @@ local function publish()
 	for k, s in PNUM do
 		out[#out + 1] = `N|{k}|{s[1]}|{s[2]}|{s[3]}|{s[4]}`
 	end
-	(Root :: any):SetAttribute("BranchNetStatsServer", table.concat(out, "\n"))
+	PROOT:SetAttribute("BranchNetStatsServer", table.concat(out, "\n"))
 end
 
-if PROFILE and (Root :: any).SetAttribute ~= nil then
-	RunService.Heartbeat:Connect(publish)
+local publishing: RBXScriptConnection? = nil
+local function setProfile(on: boolean)
+	if on == PROFILE then
+		return
+	end
+	PROFILE = on
+	if on then
+		publishing = RunService.Heartbeat:Connect(publish)
+	else
+		if publishing then
+			publishing:Disconnect()
+			publishing = nil
+		end
+		table.clear(PS_COUNT)
+		table.clear(PS_BYTES)
+		table.clear(PR_COUNT)
+		table.clear(PR_BYTES)
+		table.clear(PNUM)
+		lastPublish = -1
+		PROOT:SetAttribute("BranchNetStatsServer", nil)
+	end
+end
+
+if PROFILE_ALLOWED and PROOT.SetAttribute ~= nil then
+	setProfile(PROOT:GetAttribute("BranchProfile") ~= false)
+	PROOT:GetAttributeChangedSignal("BranchProfile"):Connect(function()
+		setProfile(PROOT:GetAttribute("BranchProfile") ~= false)
+	end)
 end
 
 -- FireNear: players whose character's PrimaryPart is within `radius`.
@@ -204,6 +237,12 @@ local runTo: { number } = {}
 local runHead: { boolean } = {}
 
 local function pack(src: buffer, n: number, starts: { number }, count: number): buffer
+	if count == 1 then
+		-- one event: no runs to find, one exact copy
+		local out = buffer_create(n)
+		buffer_copy(out, 0, src, 0, n)
+		return out
+	end
 	local runs = 0
 	local size = n
 	local i = 1
@@ -393,9 +432,30 @@ local function writeBack()
 	openS = 0
 end
 
+-- Pending single events: a player's first event of the frame, when it has a fixed size of at
+-- most 256 bytes and no Instances, goes straight into a buffer of exactly its size, kept here
+-- while the stream itself stays empty (and is not the open one). A frame that sends nothing
+-- else to that stream ships the buffer as it is. Anything else written to the stream first
+-- moves it in (promote), so the stream holds exactly what it always did.
+local pend: { buffer? } = {}
+
+local function promote(s: number)
+	local b = pend[s] :: buffer
+	pend[s] = nil
+	local n = buffer_len(b)
+	buffer_copy(sBuf[s], 0, b, 0, n) -- a stream's buffer never holds less than 256 bytes
+	sCur[s], sEvn[s] = n, 1
+	sLast[s] = if n > 1 then buffer_readu8(b, 0) else 0 -- an id alone never repeats
+	sEvs[s][1] = 0
+	sRun[s], sExtra[s] = 1, 0
+end
+
 local function openStream(s: number)
 	if s ~= openS then
 		writeBack()
+		if pend[s] then
+			promote(s)
+		end
 		buf, cap, cur, refs, refn, evs, evn, last = sBuf[s], sCap[s], sCur[s], sRefs[s], sRefn[s], sEvs[s], sEvn[s], sLast[s]
 		openS = s
 	end
@@ -561,6 +621,17 @@ end
 
 -- Ships one stream now (end of frame, or right away for function replies).
 local function ship(s: number)
+	local single = pend[s]
+	if single then
+		-- the stream is empty while one is pending: the single is all there is
+		pend[s] = nil
+		if s % 2 == 1 then
+			Reliable:FireClient(slotPlayer[(s + 1) // 2], single)
+		else
+			Unreliable:FireClient(slotPlayer[(s + 1) // 2], single)
+		end
+		return
+	end
 	local n = sCur[s]
 	if n == 0 then
 		return
@@ -625,7 +696,32 @@ local function flush()
 	for index = 1, dirtyCount do
 		local s = dirty[index]
 		sDirty[s] = false
-		ship(s)
+		local single = pend[s]
+		if single then
+			pend[s] = nil
+			if s % 2 == 1 then
+				Reliable:FireClient(slotPlayer[(s + 1) // 2], single)
+			else
+				Unreliable:FireClient(slotPlayer[(s + 1) // 2], single)
+			end
+			continue
+		end
+		local n = sCur[s]
+		if n > 0 and sEvn[s] == 1 and sRefn[s] == 0 then
+			-- one event, no Instances (the common case of state sent to each
+			-- player): one exact copy, sent, and the stream is empty again
+			local out = buffer_create(n)
+			buffer_copy(out, 0, sBuf[s], 0, n)
+			if s % 2 == 1 then
+				Reliable:FireClient(slotPlayer[(s + 1) // 2], out)
+			else
+				Unreliable:FireClient(slotPlayer[(s + 1) // 2], out)
+				sExtra[s], sRun[s] = 0, 0
+			end
+			sCur[s], sEvn[s], sLast[s] = 0, 0, 0
+		else
+			ship(s)
+		end
 	end
 	dirtyCount = 0
 	-- FireAll arenas go last: they only hold events fired after every
@@ -668,6 +764,7 @@ Players.PlayerRemoving:Connect(function(player: Player)
 	end
 	slotOf[player] = nil
 	for s = 2 * k - 1, 2 * k do
+		pend[s] = nil
 		sCur[s] = 0
 		sRefn[s] = 0
 		sEvn[s] = 0
@@ -706,14 +803,20 @@ local function trace(message: any): { string }
 	return { text, debug.traceback(text, 2) }
 end
 
-local function process(player: Player, b: buffer, r: { any }, len: number, readers: { any }, st: { any }, c: number, ri: number)
+local function process(player: Player, b: buffer, r: { any }, len: number, readers: { any }, runs: { any }, st: { any }, c: number, ri: number)
 	-- finish a run that a throwing listener cut short
 	local left = st[3]
 	if left > 0 then
-		local reader = st[4]
-		for index = left - 1, 0, -1 do
-			st[3] = index
-			c, ri = reader(player, b, c, r, ri, st)
+		local runner = st[5]
+		if runner then
+			c, ri = runner(player, b, c, r, ri, st, left)
+			st[5] = false
+		else
+			local reader = st[4]
+			for index = left - 1, 0, -1 do
+				st[3] = index
+				c, ri = reader(player, b, c, r, ri, st)
+			end
 		end
 		st[3] = 0
 	end
@@ -736,10 +839,17 @@ local function process(player: Player, b: buffer, r: { any }, len: number, reade
 				error(`bad run of event {id}`, 0)
 			end
 			local bodies = c
-			st[4] = reader
-			for index = count - 1, 0, -1 do
-				st[3] = index
-				c, ri = reader(player, b, c, r, ri, st)
+			local runner = runs[id]
+			if runner then
+				st[5] = runner
+				c, ri = runner(player, b, c, r, ri, st, count)
+				st[5] = false
+			else
+				st[4] = reader
+				for index = count - 1, 0, -1 do
+					st[3] = index
+					c, ri = reader(player, b, c, r, ri, st)
+				end
 			end
 			st[3] = 0
 			if c - bodies < count then
@@ -755,7 +865,7 @@ local function process(player: Player, b: buffer, r: { any }, len: number, reade
 	end
 end
 
-local function receiver(readers: { any })
+local function receiver(readers: { any }, runs: { any })
 	return function(player: Player, b: any, r: any)
 		if typeof(b) ~= "buffer" or (r ~= nil and type(r) ~= "table") then
 			rejected(player, "wrong argument types")
@@ -767,10 +877,10 @@ local function receiver(readers: { any })
 			return
 		end
 		local refs = r or EMPTY
-		local st = { -1, 0, 0, false }
+		local st = { -1, 0, 0, false, false }
 		local c, ri = 0, 0
 		while true do
-			local ok, problem = xpcall(process, trace, player, b, refs, len, readers, st, c, ri)
+			local ok, problem = xpcall(process, trace, player, b, refs, len, readers, runs, st, c, ri)
 			if ok then
 				return
 			end
@@ -922,36 +1032,73 @@ NAMES[1] = "Bench.Cars"
 rebuild(1)
 READ_R[1] = function(p: Player, b: buffer, c: number, r: { any }, ri: number, st: { any }): (number, number)
 	local p0 = c
-	local m7 = buffer_readu8(b, c)
-	local x4 = bit32_btest(m7, 1)
-	local x3 = buffer_readu16(b, c + 1)
-	local x5 = buffer_readu8(b, c + 3)
-	local x6 = buffer_readf64(b, c + 4)
-	if x6 ~= x6 or x6 == INF or x6 == -INF then error(ERR, 0) end
+	local m_7 = buffer_readu8(b, c)
+	local x_4 = bit32_btest(m_7, 1)
+	local x_3 = buffer_readu16(b, c + 1)
+	local x_5 = buffer_readu8(b, c + 3)
+	local x_6 = buffer_readf64(b, c + 4)
+	if x_6 ~= x_6 or x_6 == INF or x_6 == -INF then error(ERR, 0) end
 	c += 12
-	local n8 = buffer_readu8(b, c)
+	local n_8 = buffer_readu8(b, c)
 	c += 1
-	if n8 >= 128 then n8, c = rvar(b, c, n8) end
-	local s9 = buffer_readstring(b, c, n8)
-	c += n8
-	local x1 = s9
-	local n10 = buffer_readu8(b, c)
+	if n_8 >= 128 then n_8, c = rvar(b, c, n_8) end
+	local s_9 = buffer_readstring(b, c, n_8)
+	c += n_8
+	local x_1 = s_9
+	local n_10 = buffer_readu8(b, c)
 	c += 1
-	if n10 >= 128 then n10, c = rvar(b, c, n10) end
-	local s11 = buffer_readstring(b, c, n10)
-	c += n10
-	local x2 = s11
-	local a1 = x1
-	local a2 = x2
-	local a3 = x3
-	local a4 = x4
-	local a5 = x5
-	local a6 = x6
+	if n_10 >= 128 then n_10, c = rvar(b, c, n_10) end
+	local s_11 = buffer_readstring(b, c, n_10)
+	c += n_10
+	local x_2 = s_11
+	local a1 = x_1
+	local a2 = x_2
+	local a3 = x_3
+	local a4 = x_4
+	local a5 = x_5
+	local a6 = x_6
 	if PROFILE then precv(1, c - p0) end
 	if PROFILE then pnum(1, "carId", a3, "u16", NAMES); pnum(1, "dealers", a5, "u8", NAMES); pnum(1, "price", a6, "f64", NAMES) end
 	st[1], st[2] = c, ri
 	ON[1](p, a1, a2, a3, a4, a5, a6)
 	st[1] = -1
+	return c, ri
+end
+RUN_R[1] = function(p: Player, b: buffer, c: number, r: { any }, ri: number, st: { any }, count: number): (number, number)
+	for index = count - 1, 0, -1 do
+		st[3] = index
+		local p0 = c
+		local m_18 = buffer_readu8(b, c)
+		local x_15 = bit32_btest(m_18, 1)
+		local x_14 = buffer_readu16(b, c + 1)
+		local x_16 = buffer_readu8(b, c + 3)
+		local x_17 = buffer_readf64(b, c + 4)
+		if x_17 ~= x_17 or x_17 == INF or x_17 == -INF then error(ERR, 0) end
+		c += 12
+		local n_19 = buffer_readu8(b, c)
+		c += 1
+		if n_19 >= 128 then n_19, c = rvar(b, c, n_19) end
+		local s_20 = buffer_readstring(b, c, n_19)
+		c += n_19
+		local x_12 = s_20
+		local n_21 = buffer_readu8(b, c)
+		c += 1
+		if n_21 >= 128 then n_21, c = rvar(b, c, n_21) end
+		local s_22 = buffer_readstring(b, c, n_21)
+		c += n_21
+		local x_13 = s_22
+		local a1 = x_12
+		local a2 = x_13
+		local a3 = x_14
+		local a4 = x_15
+		local a5 = x_16
+		local a6 = x_17
+		if PROFILE then precv(1, c - p0) end
+		if PROFILE then pnum(1, "carId", a3, "u16", NAMES); pnum(1, "dealers", a5, "u8", NAMES); pnum(1, "price", a6, "f64", NAMES) end
+		st[1], st[2] = c, ri
+		ON[1](p, a1, a2, a3, a4, a5, a6)
+		st[1] = -1
+	end
 	return c, ri
 end
 
@@ -963,10 +1110,10 @@ READ_R[2] = function(p: Player, b: buffer, c: number, r: { any }, ri: number, st
 	local p0 = c
 	local callId = buffer_readu16(b, c)
 	c += 2
-	local x12 = buffer_readf64(b, c)
-	if x12 ~= x12 or x12 == INF or x12 == -INF then error(ERR, 0) end
+	local x_23 = buffer_readf64(b, c)
+	if x_23 ~= x_23 or x_23 == INF or x_23 == -INF then error(ERR, 0) end
 	c += 8
-	local a1 = x12
+	local a1 = x_23
 	if PROFILE then precv(2, c - p0) end
 	if PROFILE then pnum(2, "value", a1, "f64", NAMES) end
 	local handler = HANDLERS[2]
@@ -1012,23 +1159,54 @@ local Services = {
 		Moves = table.freeze({
 			Fire = function(player: Player, a1: Vector3, a2: Vector3, a3: number, a4: boolean, a5: boolean, a6: boolean, a7: number)
 				if PROFILE then pnum(1, "yaw", a3, "f32"); pnum(1, "anim", a7, "u8") end
-				local s = target(player, 1)
-				if not s then return end
+				if openS < 0 then writeBack() end
+				if bCur[1] > 0 then materialize(1) end
+				local k = slotOf[player] or slot(player)
+				if not k then return end
+				local s = 2 * k - 2 + 1
+				if s ~= openS and sCur[s] == 0 and pend[s] == nil then
+					local b, c, rn, c0 = buffer_create(31), 0, 0, 0
+					local cap = 31
+					local more = false
+					if c + 31 > cap then b = grow(c, c + 31) end
+					if more then c -= 1 else buffer_writeu8(b, c, 1) end
+					local m_24 = (if a4 then 1 else 0) + (if a5 then 2 else 0) + (if a6 then 4 else 0)
+					buffer_writeu8(b, c + 1, m_24)
+					local vec_25 = a1
+					buffer_writef32(b, c + 2, vec_25.X)
+					buffer_writef32(b, c + 6, vec_25.Y)
+					buffer_writef32(b, c + 10, vec_25.Z)
+					local vec_26 = a2
+					buffer_writef32(b, c + 14, vec_26.X)
+					buffer_writef32(b, c + 18, vec_26.Y)
+					buffer_writef32(b, c + 22, vec_26.Z)
+					buffer_writef32(b, c + 26, a3)
+					buffer_writeu8(b, c + 30, a7)
+					c += 31
+					pend[s] = b
+					if PROFILE then psent(1, c - c0) end
+					if not sDirty[s] then
+						sDirty[s] = true
+						dirtyCount += 1
+						dirty[dirtyCount] = s
+					end
+					return
+				end
 				openStream(s)
 				local b, c, rn, c0 = buf, cur, refn, cur
 				local more = last == 1
 				if c + 31 > cap then b = grow(c, c + 31) end
 				if more then c -= 1 else buffer_writeu8(b, c, 1) end
-				local m13 = (if a4 then 1 else 0) + (if a5 then 2 else 0) + (if a6 then 4 else 0)
-				buffer_writeu8(b, c + 1, m13)
-				local vec14 = a1
-				buffer_writef32(b, c + 2, vec14.X)
-				buffer_writef32(b, c + 6, vec14.Y)
-				buffer_writef32(b, c + 10, vec14.Z)
-				local vec15 = a2
-				buffer_writef32(b, c + 14, vec15.X)
-				buffer_writef32(b, c + 18, vec15.Y)
-				buffer_writef32(b, c + 22, vec15.Z)
+				local m_27 = (if a4 then 1 else 0) + (if a5 then 2 else 0) + (if a6 then 4 else 0)
+				buffer_writeu8(b, c + 1, m_27)
+				local vec_28 = a1
+				buffer_writef32(b, c + 2, vec_28.X)
+				buffer_writef32(b, c + 6, vec_28.Y)
+				buffer_writef32(b, c + 10, vec_28.Z)
+				local vec_29 = a2
+				buffer_writef32(b, c + 14, vec_29.X)
+				buffer_writef32(b, c + 18, vec_29.Y)
+				buffer_writef32(b, c + 22, vec_29.Z)
 				buffer_writef32(b, c + 26, a3)
 				buffer_writeu8(b, c + 30, a7)
 				c += 31
@@ -1045,16 +1223,16 @@ local Services = {
 				local more = last == 1
 				if c + 31 > cap then b = grow(c, c + 31) end
 				if more then c -= 1 else buffer_writeu8(b, c, 1) end
-				local m16 = (if a4 then 1 else 0) + (if a5 then 2 else 0) + (if a6 then 4 else 0)
-				buffer_writeu8(b, c + 1, m16)
-				local vec17 = a1
-				buffer_writef32(b, c + 2, vec17.X)
-				buffer_writef32(b, c + 6, vec17.Y)
-				buffer_writef32(b, c + 10, vec17.Z)
-				local vec18 = a2
-				buffer_writef32(b, c + 14, vec18.X)
-				buffer_writef32(b, c + 18, vec18.Y)
-				buffer_writef32(b, c + 22, vec18.Z)
+				local m_30 = (if a4 then 1 else 0) + (if a5 then 2 else 0) + (if a6 then 4 else 0)
+				buffer_writeu8(b, c + 1, m_30)
+				local vec_31 = a1
+				buffer_writef32(b, c + 2, vec_31.X)
+				buffer_writef32(b, c + 6, vec_31.Y)
+				buffer_writef32(b, c + 10, vec_31.Z)
+				local vec_32 = a2
+				buffer_writef32(b, c + 14, vec_32.X)
+				buffer_writef32(b, c + 18, vec_32.Y)
+				buffer_writef32(b, c + 22, vec_32.Z)
 				buffer_writef32(b, c + 26, a3)
 				buffer_writeu8(b, c + 30, a7)
 				c += 31
@@ -1071,16 +1249,16 @@ local Services = {
 				local more = last == 1
 				if c + 31 > cap then b = grow(c, c + 31) end
 				if more then c -= 1 else buffer_writeu8(b, c, 1) end
-				local m19 = (if a4 then 1 else 0) + (if a5 then 2 else 0) + (if a6 then 4 else 0)
-				buffer_writeu8(b, c + 1, m19)
-				local vec20 = a1
-				buffer_writef32(b, c + 2, vec20.X)
-				buffer_writef32(b, c + 6, vec20.Y)
-				buffer_writef32(b, c + 10, vec20.Z)
-				local vec21 = a2
-				buffer_writef32(b, c + 14, vec21.X)
-				buffer_writef32(b, c + 18, vec21.Y)
-				buffer_writef32(b, c + 22, vec21.Z)
+				local m_33 = (if a4 then 1 else 0) + (if a5 then 2 else 0) + (if a6 then 4 else 0)
+				buffer_writeu8(b, c + 1, m_33)
+				local vec_34 = a1
+				buffer_writef32(b, c + 2, vec_34.X)
+				buffer_writef32(b, c + 6, vec_34.Y)
+				buffer_writef32(b, c + 10, vec_34.Z)
+				local vec_35 = a2
+				buffer_writef32(b, c + 14, vec_35.X)
+				buffer_writef32(b, c + 18, vec_35.Y)
+				buffer_writef32(b, c + 22, vec_35.Z)
 				buffer_writef32(b, c + 26, a3)
 				buffer_writeu8(b, c + 30, a7)
 				c += 31
@@ -1099,16 +1277,16 @@ local Services = {
 				local more = last == 1
 				if c + 31 > cap then b = grow(c, c + 31) end
 				if more then c -= 1 else buffer_writeu8(b, c, 1) end
-				local m22 = (if a4 then 1 else 0) + (if a5 then 2 else 0) + (if a6 then 4 else 0)
-				buffer_writeu8(b, c + 1, m22)
-				local vec23 = a1
-				buffer_writef32(b, c + 2, vec23.X)
-				buffer_writef32(b, c + 6, vec23.Y)
-				buffer_writef32(b, c + 10, vec23.Z)
-				local vec24 = a2
-				buffer_writef32(b, c + 14, vec24.X)
-				buffer_writef32(b, c + 18, vec24.Y)
-				buffer_writef32(b, c + 22, vec24.Z)
+				local m_36 = (if a4 then 1 else 0) + (if a5 then 2 else 0) + (if a6 then 4 else 0)
+				buffer_writeu8(b, c + 1, m_36)
+				local vec_37 = a1
+				buffer_writef32(b, c + 2, vec_37.X)
+				buffer_writef32(b, c + 6, vec_37.Y)
+				buffer_writef32(b, c + 10, vec_37.Z)
+				local vec_38 = a2
+				buffer_writef32(b, c + 14, vec_38.X)
+				buffer_writef32(b, c + 18, vec_38.Y)
+				buffer_writef32(b, c + 22, vec_38.Z)
 				buffer_writef32(b, c + 26, a3)
 				buffer_writeu8(b, c + 30, a7)
 				c += 31
@@ -1127,16 +1305,16 @@ local Services = {
 				local more = last == 1
 				if c + 31 > cap then b = grow(c, c + 31) end
 				if more then c -= 1 else buffer_writeu8(b, c, 1) end
-				local m25 = (if a4 then 1 else 0) + (if a5 then 2 else 0) + (if a6 then 4 else 0)
-				buffer_writeu8(b, c + 1, m25)
-				local vec26 = a1
-				buffer_writef32(b, c + 2, vec26.X)
-				buffer_writef32(b, c + 6, vec26.Y)
-				buffer_writef32(b, c + 10, vec26.Z)
-				local vec27 = a2
-				buffer_writef32(b, c + 14, vec27.X)
-				buffer_writef32(b, c + 18, vec27.Y)
-				buffer_writef32(b, c + 22, vec27.Z)
+				local m_39 = (if a4 then 1 else 0) + (if a5 then 2 else 0) + (if a6 then 4 else 0)
+				buffer_writeu8(b, c + 1, m_39)
+				local vec_40 = a1
+				buffer_writef32(b, c + 2, vec_40.X)
+				buffer_writef32(b, c + 6, vec_40.Y)
+				buffer_writef32(b, c + 10, vec_40.Z)
+				local vec_41 = a2
+				buffer_writef32(b, c + 14, vec_41.X)
+				buffer_writef32(b, c + 18, vec_41.Y)
+				buffer_writef32(b, c + 22, vec_41.Z)
 				buffer_writef32(b, c + 26, a3)
 				buffer_writeu8(b, c + 30, a7)
 				c += 31
@@ -1163,8 +1341,8 @@ local Services = {
 	}),
 }
 
-Reliable.OnServerEvent:Connect(receiver(READ_R))
-Unreliable.OnServerEvent:Connect(receiver(READ_U))
+Reliable.OnServerEvent:Connect(receiver(READ_R, RUN_R))
+Unreliable.OnServerEvent:Connect(receiver(READ_U, RUN_U))
 
 return table.freeze({
 	Services = table.freeze(Services),

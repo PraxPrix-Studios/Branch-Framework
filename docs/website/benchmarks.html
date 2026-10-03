@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Benchmarks · Branch</title>
-<meta name="description" content="Branch Network against NetRay and Blink: every case measured in Lune and in the real Roblox engine.">
+<meta name="description" content="Branch Network against NetRay, Blink, BlinkBlox, QuickNet and Warp: every case measured in Lune and in the real Roblox engine.">
 <link rel="icon" href="assets/mark.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
@@ -114,6 +114,22 @@
 .bench h2::before{display:none}
 .bench h2.commit::before{display:block}
 .bench .hero{padding-top:8px}
+
+
+
+
+/* part 3 */
+.bench .merge.m4 .mrow{grid-template-columns:minmax(0,1fr) repeat(4,88px)}
+.bench .merge.m4 .mhead .p{white-space:normal;line-height:1.3}
+.bench .merge.m4 .mrow .n{flex-direction:column;align-items:flex-start;gap:1px}
+.bench .merge.m4 .mrow .n span{white-space:normal;overflow:visible}
+.bench .mrow .p.slower{color:var(--warn)}
+@media (max-width:640px){.bench .merge.m4 .mrow{grid-template-columns:minmax(0,1fr) repeat(4,54px);gap:6px;padding-inline:12px}
+.bench .merge.m4 .mrow .p{font-size:12.5px}
+.bench .merge.m4 .mrow .n code{display:block}}
+.bench td small{color:var(--faint);font:500 11px var(--mono)}
+.bench #rivals .meta{margin:10px 0 0}
+/* /part 3 */
 </style>
 </head>
 <body data-root="" data-page="benchmarks">
@@ -125,7 +141,7 @@
   <div>
     <div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><circle cx="7" cy="5" r="2.3" fill="#fff" stroke="none"/><circle cx="7" cy="19" r="2.3" fill="#fff" stroke="none"/><circle cx="17" cy="7" r="2.3" fill="#fff" stroke="none"/><path d="M7 7v10"/><path d="M17 9.3c0 4-10 3-10 7.7"/></svg></div>
     <h1>How fast is <em>Branch Network</em>?</h1>
-    <p>Branch Network is the compiled networking layer of Branch. You declare events on your services, and the Branch Studio plugin writes the serialisation code for them. We raced it against the two best-known libraries of its kind: same schemas, same data, same machine.</p>
+    <p>Branch Network is the compiled networking layer of Branch. You declare events on your services, and the Branch Studio plugin writes the serialisation code for them. We raced it against the two best-known libraries of its kind: same schemas, same data, same machine. <a href="#rivals">Part 3</a> adds the newest ones, BlinkBlox, QuickNet and Warp, measured in BlinkBlox's own benchmark.</p>
     <p><a href="https://github.com/PraxPrix-Studios/Branch-Framework/tree/main/bench">See the benchmark code on GitHub →</a></p>
     <div class="meta"><span>measured <b>24 Sep 2026</b></span><span>branch <b>2.0.0</b></span><span>netray <b>0.1.1</b></span><span>blink <b>v0.17</b></span></div>
   </div>
@@ -156,6 +172,7 @@
   <p class="lead">Every case below, merged into one view. <strong>“X% faster”</strong> means the other library needs X% more time than Branch for the same work: if Branch takes 1.0 ms and NetRay 1.5 ms, Branch is 50% faster.</p>
   <div class="merge" id="merge"></div>
   <p class="lead" style="margin-top:14px">Branch was faster in every case but one: the function round trip is a tie, because the network decides it, not the code. Branch also sends the same or fewer bytes everywhere, and it <strong>validates everything a client sends</strong>. NetRay does not by default.</p>
+  <p class="lead">Against BlinkBlox, QuickNet and Warp, in BlinkBlox's own suite, Branch leads nearly every case on a Roblox server. The closest, one unreliable event to each of 50 players, is a tie. <a href="#rivals">See Part 3</a>.</p>
 </section>
 
 <section id="lune">
@@ -194,6 +211,82 @@
 </section>
 
 
+
+
+
+
+
+
+
+
+<section id="rivals">
+  <h2 class="commit">Part 3 · Against BlinkBlox, QuickNet and Warp</h2>
+  <p class="lead">Run in BlinkBlox's own benchmark suite, with Branch, QuickNet and Warp added and nothing else changed. 29 Sep to 3 Oct 2026. <code>lune run bench/rivals/run</code> (<a href="https://github.com/PraxPrix-Studios/Branch-Framework/tree/main/bench/rivals">bench/rivals</a>).</p>
+  <div class="meta"><span>blinkblox <b>0.42.1</b></span><span>blink <b>0.18.9</b></span><span>quicknet <b>0.3.5</b></span><span>warp <b>1.1.0-pre7</b></span><span>branch <b>2.0.0</b></span></div>
+  <div class="how"><ul>
+    <li>BlinkBlox's workloads and scenarios plus Branch's seven, same mocked engine, arrivals counted every frame.</li>
+    <li>One process per row, pinned to a P-core, median of three passes. Inbound limits raised for every tool; Branch without Studio checks. Within 3% is a tie.</li>
+  </ul></div>
+
+  <h3>Native</h3>
+<div class="merge m4"><div class="mrow mhead"><span>case</span><span class="p">vs BlinkBlox</span><span class="p">vs QuickNet</span><span class="p">vs Blink</span><span class="p">vs Warp</span></div>
+<div class="mrow"><span class="n"><code>blinkblox/booleans</code><span>1000 booleans, the same every event</span></span><span class="p tie">tie</span><span class="p">16%</span><span class="p">162%</span><span class="p">112%</span></div>
+<div class="mrow"><span class="n"><code>blinkblox/booleans-random</code><span>1000 booleans, different every event</span></span><span class="p">5%</span><span class="p">46%</span><span class="p">144%</span><span class="p">155%</span></div>
+<div class="mrow"><span class="n"><code>blinkblox/entities</code><span>100 entities, the same every event</span></span><span class="p">11%</span><span class="p">269%</span><span class="p">777%</span><span class="p">1349%</span></div>
+<div class="mrow"><span class="n"><code>blinkblox/entities-random</code><span>100 entities, different every event</span></span><span class="p">10%</span><span class="p">239%</span><span class="p">513%</span><span class="p">1063%</span></div>
+<div class="mrow"><span class="n"><code>blinkblox/tiny</code><span>One-byte events (framing and dispatch only)</span></span><span class="p">72%</span><span class="p tie">—</span><span class="p tie">—</span><span class="p tie">—</span></div>
+<div class="mrow"><span class="n"><code>blinkblox/broadcast</code><span>FireAll: 100 unit updates to 50 players</span></span><span class="p">50%</span><span class="p">1752%</span><span class="p">3900%</span><span class="p">12400%</span></div>
+<div class="mrow"><span class="n"><code>blinkblox/instances</code><span>100 events carrying a Part</span></span><span class="p">72%</span><span class="p">485%</span><span class="p">29%</span><span class="p">1624%</span></div>
+<div class="mrow"><span class="n"><code>blinkblox/self</code><span>Self state: one unreliable event to each of 50 players</span></span><span class="p tie">tie</span><span class="p">116%</span><span class="p tie">tie</span><span class="p">279%</span></div>
+<div class="mrow"><span class="n"><code>blinkblox/input</code><span>8 unreliable inputs a frame, client to server</span></span><span class="p">150%</span><span class="p">150%</span><span class="p">266%</span><span class="p">801%</span></div>
+<div class="mrow"><span class="n"><code>blinkblox/world</code><span>World state: 16 units, one unreliable FireAll to 50 players</span></span><span class="p tie">tie</span><span class="p">499%</span><span class="p">140%</span><span class="p">7043%</span></div>
+<div class="mrow"><span class="n"><code>branch/booleans</code><span>1000 booleans × 10 a frame</span></span><span class="p tie">tie</span><span class="p">18%</span><span class="p">103%</span><span class="p">130%</span></div>
+<div class="mrow"><span class="n"><code>branch/cars</code><span>Cars: 50 structs with strings, client to server</span></span><span class="p">46%</span><span class="p">215%</span><span class="p">150%</span><span class="p">619%</span></div>
+<div class="mrow"><span class="n"><code>branch/chat</code><span>Chat: (string, u8) × 500 a frame</span></span><span class="p">81%</span><span class="p">567%</span><span class="p">54%</span><span class="p">1654%</span></div>
+<div class="mrow"><span class="n"><code>branch/entities</code><span>100 small structs × 10 a frame</span></span><span class="p tie">tie</span><span class="p">112%</span><span class="p">275%</span><span class="p">459%</span></div>
+<div class="mrow"><span class="n"><code>branch/fireall</code><span>Movement, FireAll to 20 players × 50</span></span><span class="p">22%</span><span class="p">567%</span><span class="p">1415%</span><span class="p">3900%</span></div>
+<div class="mrow"><span class="n"><code>branch/moves</code><span>Movement, server to one player × 500</span></span><span class="p">11%</span><span class="p">127%</span><span class="p">124%</span><span class="p">432%</span></div>
+<div class="mrow"><span class="n"><code>branch/unreliable</code><span>Unreliable movement, server to one player × 200</span></span><span class="p">126%</span><span class="p">102%</span><span class="p">208%</span><span class="p">346%</span></div>
+</div>
+  <h3>Interpreted</h3>
+<div class="merge m4"><div class="mrow mhead"><span>case</span><span class="p">vs BlinkBlox</span><span class="p">vs QuickNet</span><span class="p">vs Blink</span><span class="p">vs Warp</span></div>
+<div class="mrow"><span class="n"><code>blinkblox/booleans</code><span>1000 booleans, the same every event</span></span><span class="p">5%</span><span class="p">31%</span><span class="p">140%</span><span class="p">232%</span></div>
+<div class="mrow"><span class="n"><code>blinkblox/booleans-random</code><span>1000 booleans, different every event</span></span><span class="p">10%</span><span class="p">37%</span><span class="p">172%</span><span class="p">241%</span></div>
+<div class="mrow"><span class="n"><code>blinkblox/entities</code><span>100 entities, the same every event</span></span><span class="p">40%</span><span class="p">154%</span><span class="p">158%</span><span class="p">521%</span></div>
+<div class="mrow"><span class="n"><code>blinkblox/entities-random</code><span>100 entities, different every event</span></span><span class="p">31%</span><span class="p">156%</span><span class="p">144%</span><span class="p">521%</span></div>
+<div class="mrow"><span class="n"><code>blinkblox/tiny</code><span>One-byte events (framing and dispatch only)</span></span><span class="p">58%</span><span class="p tie">—</span><span class="p tie">—</span><span class="p tie">—</span></div>
+<div class="mrow"><span class="n"><code>blinkblox/broadcast</code><span>FireAll: 100 unit updates to 50 players</span></span><span class="p">45%</span><span class="p">1624%</span><span class="p">3126%</span><span class="p">19900%</span></div>
+<div class="mrow"><span class="n"><code>blinkblox/instances</code><span>100 events carrying a Part</span></span><span class="p">45%</span><span class="p">245%</span><span class="p">14%</span><span class="p">576%</span></div>
+<div class="mrow"><span class="n"><code>blinkblox/self</code><span>Self state: one unreliable event to each of 50 players</span></span><span class="p slower">−14%</span><span class="p">89%</span><span class="p slower">−29%</span><span class="p">142%</span></div>
+<div class="mrow"><span class="n"><code>blinkblox/input</code><span>8 unreliable inputs a frame, client to server</span></span><span class="p">100%</span><span class="p">133%</span><span class="p">100%</span><span class="p">289%</span></div>
+<div class="mrow"><span class="n"><code>blinkblox/world</code><span>World state: 16 units, one unreliable FireAll to 50 players</span></span><span class="p tie">tie</span><span class="p">571%</span><span class="p">77%</span><span class="p">8991%</span></div>
+<div class="mrow"><span class="n"><code>branch/booleans</code><span>1000 booleans × 10 a frame</span></span><span class="p">8%</span><span class="p">35%</span><span class="p">141%</span><span class="p">231%</span></div>
+<div class="mrow"><span class="n"><code>branch/cars</code><span>Cars: 50 structs with strings, client to server</span></span><span class="p">45%</span><span class="p">162%</span><span class="p">63%</span><span class="p">478%</span></div>
+<div class="mrow"><span class="n"><code>branch/chat</code><span>Chat: (string, u8) × 500 a frame</span></span><span class="p">58%</span><span class="p">233%</span><span class="p">24%</span><span class="p">537%</span></div>
+<div class="mrow"><span class="n"><code>branch/entities</code><span>100 small structs × 10 a frame</span></span><span class="p">31%</span><span class="p">89%</span><span class="p">124%</span><span class="p">426%</span></div>
+<div class="mrow"><span class="n"><code>branch/fireall</code><span>Movement, FireAll to 20 players × 50</span></span><span class="p">39%</span><span class="p">713%</span><span class="p">1308%</span><span class="p">6150%</span></div>
+<div class="mrow"><span class="n"><code>branch/moves</code><span>Movement, server to one player × 500</span></span><span class="p">21%</span><span class="p">182%</span><span class="p">80%</span><span class="p">462%</span></div>
+<div class="mrow"><span class="n"><code>branch/unreliable</code><span>Unreliable movement, server to one player × 200</span></span><span class="p">71%</span><span class="p">107%</span><span class="p">100%</span><span class="p">298%</span></div>
+</div>
+  <p class="desc">Self state: tie native, −14% interpreted. World and self state re-timed over 4000 frames. Lune 0.10.5 (Luau 0.709); Warp's <code>const</code> written as <code>local</code> to load.</p>
+
+  <h3>Roblox Studio</h3>
+  <p class="desc">Client fires 1000 events a frame for 10 s. FPS, capped at 144.</p>
+  <div class="tbl"><table class="num"><thead><tr><th>Bench</th><th>Branch</th><th>BlinkBlox</th><th>QuickNet</th><th>Blink</th><th>Warp</th></tr></thead><tbody>
+<tr><td>EntitiesRandom</td><td>141</td><td>129</td><td>98</td><td>105</td><td>39</td></tr>
+<tr><td>Entities</td><td>97</td><td>84</td><td>60</td><td>46</td><td>34</td></tr>
+<tr><td>BooleansRandom</td><td>144</td><td>118</td><td>123</td><td>79</td><td>63</td></tr>
+<tr><td>Booleans</td><td>144</td><td>119</td><td>144</td><td>98</td><td>74</td></tr>
+<tr><td>Cars (ours)</td><td>144</td><td>144</td><td>144</td><td>144</td><td>144</td></tr>
+  </tbody></table></div>
+  <p class="desc">Server fires 1000 events a frame for 10 s. Server ms per frame, events delivered.</p>
+  <div class="tbl"><table class="num"><thead><tr><th>Bench</th><th>Branch</th><th>BlinkBlox</th><th>QuickNet</th><th>Blink</th><th>Warp</th></tr></thead><tbody>
+<tr><td>Movement to one player</td><td>0.082<br><small>all</small></td><td>0.119<br><small>all</small></td><td>0.264<br><small>all</small></td><td>0.165<br><small>all</small></td><td>0.117*<br><small>all</small></td></tr>
+<tr><td>FireAll</td><td>0.083<br><small>all</small></td><td>0.131<br><small>all</small></td><td>0.424<br><small>all</small></td><td>0.386<br><small>all</small></td><td>0.138*<br><small>all</small></td></tr>
+<tr><td>Unreliable movement</td><td>0.183<br><small>all</small></td><td>1.325<br><small>all</small></td><td>0.264<br><small><b>none</b></small></td><td>1.388<br><small>all</small></td><td>0.117*<br><small><b>none</b></small></td></tr>
+  </tbody></table></div>
+  <p class="desc">QuickNet and Warp send unreliable events as one 4–6 KB packet; Roblox drops unreliable packets over ~900 B. Branch splits at 820 B. * Warp's Fire only queues; its work runs later in the frame. Studio runs used an earlier build of this round.</p>
+</section>
 
 <p class="foot">Full text: <a href="https://github.com/PraxPrix-Studios/Branch-Framework/blob/main/docs/markdowns/benchmarks.md">benchmarks.md</a> · Source: <a href="https://github.com/PraxPrix-Studios/Branch-Framework">PraxPrix-Studios/Branch-Framework</a></p>
 </div>

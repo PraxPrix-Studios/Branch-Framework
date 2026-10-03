@@ -409,6 +409,63 @@ In each of these, Branch still wins, or ties, on the total.
 
 **Safety is included in the numbers.** Every Branch result above includes server-side validation of client data: bounds, ranges, NaN, Instance classes and array lengths. A malformed packet is dropped and reported through `Branch.Network.OnReject`. NetRay shipped with validation off in these tests; its `Validate=Full` rows show the cost of turning it on.
 
-## About the benchmark code
+## Round 2: BlinkBlox, QuickNet and Warp
 
-The benchmark harness compiles Branch's networking with the Branch Studio compiler, which is not open source, so the harness is not in this repository. The runtime tests in this repository run with `lune run tests/runtime.test.luau`.
+Run in BlinkBlox's own benchmark suite with Branch, QuickNet and Warp added, nothing else changed. 29 Sep to 3 Oct 2026. One process per row pinned to a P-core, median of three passes, within 3% is a tie, a dash means the tool is not in that part of the suite.
+
+**Native**
+
+| Case | vs BlinkBlox | vs QuickNet | vs Blink | vs Warp |
+|---|---:|---:|---:|---:|
+| 1000 booleans, the same every event | tie | 16% faster | 162% faster | 112% faster |
+| 1000 booleans, different every event | 5% faster | 46% faster | 144% faster | 155% faster |
+| 100 entities, the same every event | 11% faster | 269% faster | 777% faster | 1349% faster |
+| 100 entities, different every event | 10% faster | 239% faster | 513% faster | 1063% faster |
+| one-byte events | 72% faster | – | – | – |
+| FireAll: 100 unit updates to 50 players | 50% faster | 1752% faster | 3900% faster | 12400% faster |
+| 100 events carrying a Part | 72% faster | 485% faster | 29% faster | 1624% faster |
+| self state: one unreliable event to each of 50 players | tie | 116% faster | tie | 279% faster |
+| 8 unreliable inputs a frame, client to server | 150% faster | 150% faster | 266% faster | 801% faster |
+| world state: one unreliable FireAll to 50 players | tie | 499% faster | 140% faster | 7043% faster |
+| Branch: 1000 booleans ×10 a frame | tie | 18% faster | 103% faster | 130% faster |
+| Branch: 50 cars a frame, client to server | 46% faster | 215% faster | 150% faster | 619% faster |
+| Branch: (string, u8) ×500 a frame | 81% faster | 567% faster | 54% faster | 1654% faster |
+| Branch: 100 small structs ×10 a frame | tie | 112% faster | 275% faster | 459% faster |
+| Branch: FireAll to 20 players ×50 | 22% faster | 567% faster | 1415% faster | 3900% faster |
+| Branch: server to one player ×500 | 11% faster | 127% faster | 124% faster | 432% faster |
+| Branch: unreliable, server to one player ×200 | 126% faster | 102% faster | 208% faster | 346% faster |
+
+**Interpreted**
+
+| Case | vs BlinkBlox | vs QuickNet | vs Blink | vs Warp |
+|---|---:|---:|---:|---:|
+| 1000 booleans, the same every event | 5% faster | 31% faster | 140% faster | 232% faster |
+| 1000 booleans, different every event | 10% faster | 37% faster | 172% faster | 241% faster |
+| 100 entities, the same every event | 40% faster | 154% faster | 158% faster | 521% faster |
+| 100 entities, different every event | 31% faster | 156% faster | 144% faster | 521% faster |
+| one-byte events | 58% faster | – | – | – |
+| FireAll: 100 unit updates to 50 players | 45% faster | 1624% faster | 3126% faster | 19900% faster |
+| 100 events carrying a Part | 45% faster | 245% faster | 14% faster | 576% faster |
+| self state: one unreliable event to each of 50 players | 14% slower | 89% faster | 29% slower | 142% faster |
+| 8 unreliable inputs a frame, client to server | 100% faster | 133% faster | 100% faster | 289% faster |
+| world state: one unreliable FireAll to 50 players | tie | 571% faster | 77% faster | 8991% faster |
+| Branch: 1000 booleans ×10 a frame | 8% faster | 35% faster | 141% faster | 231% faster |
+| Branch: 50 cars a frame, client to server | 45% faster | 162% faster | 63% faster | 478% faster |
+| Branch: (string, u8) ×500 a frame | 58% faster | 233% faster | 24% faster | 537% faster |
+| Branch: 100 small structs ×10 a frame | 31% faster | 89% faster | 124% faster | 426% faster |
+| Branch: FireAll to 20 players ×50 | 39% faster | 713% faster | 1308% faster | 6150% faster |
+| Branch: server to one player ×500 | 21% faster | 182% faster | 80% faster | 462% faster |
+| Branch: unreliable, server to one player ×200 | 71% faster | 107% faster | 100% faster | 298% faster |
+
+Self state: tie native, 14% slower interpreted. In Studio, QuickNet and Warp lose all unreliable events (one 4 to 6 KB packet; Roblox drops unreliable packets over ~900 B). Branch splits at 820 B.
+
+## Run the benchmarks yourself
+
+Everything is in [`bench/`](/bench); Branch's generated code is included, no plugin needed. Lune 0.10, from the repository root:
+
+```sh
+lune run bench/bench.luau        # round 1: NetRay and Blink
+lune run bench/rivals/run        # round 2: BlinkBlox, QuickNet and Warp
+```
+
+See [`bench/README.md`](/bench/README.md) for the Studio place and the files. The runtime tests run with `lune run tests/runtime.test.luau`.

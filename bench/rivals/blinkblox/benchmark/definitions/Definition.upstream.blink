@@ -1,0 +1,89 @@
+-- The same events as Definition.blink, for upstream Blink, the project BlinkBlox forked from. It is
+-- compiled by upstream's own compiler at its last release on main, v0.18.9 (download.luau).
+--
+-- Upstream has no inbound limits to raise, so it takes none of the options Definition.blink raises.
+-- It runs in the same place as BlinkBlox, which keeps upstream's remote names and `_G._BLINK` for
+-- compatibility, so it gets a scope of its own: its remotes are UPSTREAM_BLINK_RELIABLE_REMOTE and
+-- the like.
+option ClientOutput = "../src/shared/upstream/Client.luau"
+option ServerOutput = "../src/shared/upstream/Server.luau"
+option RemoteScope = "UPSTREAM"
+
+struct Entity {
+    id: u8,
+    x: u8,
+    y: u8,
+    z: u8,
+    orientation: u8,
+    animation: u8
+}
+
+event Booleans {
+    From: Client,
+    Type: Reliable,
+    Call: SingleSync,
+    Data: boolean[0..1000]
+}
+
+event Entities {
+    From: Client,
+    Type: Reliable,
+    Call: SingleSync,
+    Data: Entity[0..1000]
+}
+
+event BooleansRandom {
+    From: Client,
+    Type: Reliable,
+    Call: SingleSync,
+    Data: boolean[0..1000]
+}
+
+event EntitiesRandom {
+    From: Client,
+    Type: Reliable,
+    Call: SingleSync,
+    Data: Entity[0..1000]
+}
+
+struct Car {
+    brand: string,
+    carName: string,
+    carId: u16,
+    available: boolean,
+    dealers: u8,
+    price: f64
+}
+
+-- Branch's own bench: the entity of NetRay's Benchmark.rbxl (src/shared/benches/Cars.luau).
+event Cars {
+    From: Client,
+    Type: Reliable,
+    Call: SingleSync,
+    Data: Car
+}
+
+struct Move {
+    pos: vector,
+    vel: vector,
+    yaw: f32,
+    grounded: boolean,
+    crouch: boolean,
+    sprint: boolean,
+    anim: u8
+}
+
+-- Server to client, for the Studio harness's down benches (src/shared/downbenches.luau).
+event Moves {
+    From: Server,
+    Type: Reliable,
+    Call: SingleSync,
+    Data: Move
+}
+
+event MovesU {
+    From: Server,
+    Type: Unreliable,
+    Call: SingleSync,
+    Data: Move
+}

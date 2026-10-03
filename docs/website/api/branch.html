@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Branch API · Branch</title>
-<meta name="description" content="API reference for the Branch module: Start, GetSegment, LocateSegments, GetPhase, AwaitStart, GetReport, Network, Data.">
+<meta name="description" content="API reference for the Branch module: Start, GetSegment, LocateSegments, GetPhase, AwaitStart, GetReport, Network, Data, Keybinds.">
 <link rel="icon" href="../assets/mark.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
@@ -31,7 +31,8 @@ Branch:GetReport()                            -- every segment: name, path, stat
 Branch.Version                                -- "2.0.0"
 
 Branch.Data.Server / Branch.Data.Client       -- player data (loaded on first use)
-Branch.Network.Server / .Client / .OnReject   -- your compiled events (from Branch Studio)</code></pre>
+Branch.Network.Server / .Client / .OnReject   -- your compiled events (from Branch Studio)
+Branch.Keybinds.Gameplay.Jump                 -- input actions (Branch Studio's Keybinds page)</code></pre>
 <ul class="glance-notes">
   <li><strong>Look segments up in <code>Init</code> or later</strong>, not at the top of a module: while modules load, the one you want may not exist yet.</li>
   <li><strong>A typo is loud:</strong> <code>Branch.Netwrok</code> errors instead of returning <code>nil</code>.</li>
@@ -114,6 +115,18 @@ end</code></pre>
 <h3>Branch.Data <span class="tag">field · lazy</span></h3>
 <div class="sig">Branch.<b>Data</b>: { Server: …, Client: … }</div>
 <p>Player data, loaded on first use. Only the side you are on is loaded, so ProfileStore never reaches a client's memory. Using the other side's table is an error. See <a href="data-server.html">Branch.Data.Server</a> and <a href="data-client.html">Branch.Data.Client</a>.</p>
+</div>
+
+<div class="api" id="keybinds">
+<h3>Branch.Keybinds <span class="tag">field</span></h3>
+<div class="sig">Branch.<b>Keybinds</b>: Folder &amp; { [context]: InputContext &amp; { [action]: InputAction } }</div>
+<p>The <code>Keybinds</code> folder inside the Branch module: Roblox input contexts, their actions and bindings, made on Branch Studio's <a href="../guide/studio.html#keybinds">Keybinds page</a>. With Branch Studio every context and action is typed, so <code>Branch.Keybinds.Gameplay.Jump.Pressed</code> autocompletes. Input fires on clients only.</p>
+<p><b>Errors</b> if there is no Keybinds folder yet.</p>
+<pre><code>local Keybinds = Branch.Keybinds
+Keybinds.Gameplay.Jump.Pressed:Connect(function()
+	print("jump")
+end)
+Keybinds.Menu.Enabled = true -- turn a context on</code></pre>
 </div>
 
 <h2>Segment fields</h2>

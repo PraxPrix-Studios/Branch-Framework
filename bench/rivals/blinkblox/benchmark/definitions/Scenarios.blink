@@ -1,0 +1,211 @@
+-- What benchmark/Scenarios.luau times: the paths Definition.blink never runs. The server sending to a
+-- crowd, small unreliable events, streams, and events carrying Instances. Only BlinkBlox compiles it;
+-- the other tools have no streams to compare.
+--
+-- The limits are raised for the same reason Definition.blink raises them: the bench fires far faster
+-- than any honest client, and measures the work, not the refusal.
+option MaxPacketSize = 2097152
+option MaxEventsPerPacket = 2048
+option MaxInstancesPerPacket = 2048
+option InboundBytesPerSecond = 1073741824
+option InboundBurst = 1073741824
+
+-- Numbers rather than a vector: Lune has no Vector3.
+struct Unit {
+	id: u16,
+	x: f32,
+	y: f32,
+	z: f32,
+	health: u8,
+	moving: boolean,
+	crouched: boolean
+}
+
+-- The server telling every player about one unit, through FireAll.
+event Snapshot {
+	From: Server,
+	Type: Reliable,
+	Call: SingleSync,
+	Data: Unit
+}
+
+-- A client's input, a few a frame, unreliable.
+event Input {
+	From: Client,
+	Type: Unreliable,
+	Call: SingleSync,
+	Data: struct { move: u8, turn: i16, jump: boolean, sprint: boolean }
+}
+
+-- A client naming a part, reliable.
+event Touch {
+	From: Client,
+	Type: Reliable,
+	Call: SingleSync,
+	Data: (Part: Instance, Force: u8)
+}
+
+-- The whole world's units, streamed to every player.
+event World {
+	From: Server,
+	Type: OrderedUnreliable,
+	Call: SingleSync,
+	Stream: { Rate: 20 },
+	Data: Unit[..16]
+}
+
+-- Each player's own view of themselves, streamed to that player alone.
+event Self {
+	From: Server,
+	Type: OrderedUnreliable,
+	Call: SingleSync,
+	Stream: { Rate: 20, Per: Player },
+	Data: Unit
+}
+
+-- The world and each player's own state as plain unreliable events rather than streams, for
+-- Rivals.luau: the other tools have no streams, and this is how a game sends state with them.
+event WorldState {
+	From: Server,
+	Type: Unreliable,
+	Call: SingleSync,
+	Data: Unit[..16]
+}
+
+event SelfState {
+	From: Server,
+	Type: Unreliable,
+	Call: SingleSync,
+	Data: Unit
+}
+
+-- A game with many events: the ManyEvents scenario spreads its sends over all of them, so what it
+-- times includes the client finding each one among a hundred and twenty-eight.
+event Many000 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many001 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many002 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many003 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many004 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many005 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many006 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many007 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many008 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many009 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many010 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many011 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many012 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many013 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many014 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many015 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many016 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many017 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many018 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many019 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many020 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many021 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many022 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many023 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many024 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many025 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many026 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many027 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many028 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many029 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many030 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many031 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many032 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many033 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many034 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many035 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many036 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many037 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many038 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many039 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many040 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many041 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many042 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many043 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many044 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many045 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many046 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many047 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many048 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many049 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many050 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many051 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many052 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many053 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many054 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many055 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many056 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many057 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many058 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many059 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many060 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many061 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many062 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many063 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many064 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many065 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many066 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many067 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many068 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many069 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many070 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many071 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many072 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many073 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many074 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many075 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many076 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many077 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many078 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many079 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many080 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many081 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many082 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many083 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many084 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many085 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many086 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many087 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many088 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many089 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many090 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many091 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many092 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many093 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many094 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many095 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many096 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many097 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many098 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many099 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many100 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many101 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many102 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many103 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many104 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many105 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many106 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many107 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many108 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many109 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many110 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many111 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many112 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many113 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many114 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many115 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many116 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many117 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many118 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many119 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many120 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many121 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many122 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many123 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many124 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many125 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many126 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }
+event Many127 { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }

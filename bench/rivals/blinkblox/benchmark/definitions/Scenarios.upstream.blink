@@ -1,0 +1,50 @@
+-- Scenarios.blink's events for upstream Blink, compiled by upstream's own compiler; see Rivals.luau.
+-- Upstream has no streams and no inbound limits, so it takes neither.
+option ClientOutput = "../runtime/rivals/upstream/Client.luau"
+option ServerOutput = "../runtime/rivals/upstream/Server.luau"
+option RemoteScope = "UPSTREAM"
+
+struct Unit {
+	id: u16,
+	x: f32,
+	y: f32,
+	z: f32,
+	health: u8,
+	moving: boolean,
+	crouched: boolean
+}
+
+event Snapshot {
+	From: Server,
+	Type: Reliable,
+	Call: SingleSync,
+	Data: Unit
+}
+
+event Input {
+	From: Client,
+	Type: Unreliable,
+	Call: SingleSync,
+	Data: struct { move: u8, turn: i16, jump: boolean, sprint: boolean }
+}
+
+event Touch {
+	From: Client,
+	Type: Reliable,
+	Call: SingleSync,
+	Data: (Instance, u8)
+}
+
+event WorldState {
+	From: Server,
+	Type: Unreliable,
+	Call: SingleSync,
+	Data: Unit[..16]
+}
+
+event SelfState {
+	From: Server,
+	Type: Unreliable,
+	Call: SingleSync,
+	Data: Unit
+}

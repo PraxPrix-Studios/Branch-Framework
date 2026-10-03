@@ -24,7 +24,7 @@ pesde add realllityyy/branch
 
 **Rojo / manual:** build `src/` as a model (`rojo build -o Branch.rbxm`), or copy `src/` into `ReplicatedStorage.Packages.Branch`.
 
-**Branch Studio:** the plugin installs and updates the runtime for you (Overview > Install). It also compiles types and networking as you type, runs health checks (a `GetSegment` at the top of a module, a segment used before its `Init` ran, dependency cycles, client input without limits, unused events), shows the `Init` order on its Segments page, can test your migrations on a real save (DataStores > Test migrations), and can be themed (Settings > Appearance: themes, your colors, a picture or gradient behind it, lite mode). A settings code (bottom of Settings) carries all your settings to another computer or place, and the Community page shows the games made with Branch and people's profiles (roles and profiles live in `community/community.json` in this repository).
+**Branch Studio:** the plugin installs and updates the runtime for you (Overview > Install). It also compiles types and networking as you type, runs health checks (a `GetSegment` at the top of a module, a segment used before its `Init` ran, dependency cycles, client input without limits, unused events), shows the `Init` order on its Segments page, can test your migrations on a real save (DataStores > Test migrations), and can be themed (Settings > Appearance: themes, your colors, a picture or gradient behind it, lite mode). The Keybinds page edits Roblox input actions (contexts, actions, keys on a drawn keyboard and gamepad) kept in a `Keybinds` folder inside Branch, and links an action to a controller function by writing the hookup into its `:Start()`; `Branch.Keybinds` is that folder, typed. A settings code (bottom of Settings) carries all your settings to another computer or place, and the Community page shows the games made with Branch and people's profiles (roles and profiles live in `community/community.json` in this repository).
 
 Start Branch once on each side:
 
@@ -183,7 +183,7 @@ Attack = { From = "Client", Rate = "10/s", Data = { dir = "vector" } },
 
 **See the traffic.** While you Play in Studio, Branch Studio opens the **Branch (live)** window. Its Network tab shows sends and bytes per second for every event, its share of the traffic, and hints for numbers that could use a smaller type. Its Startup tab shows how long each segment's `Init` took, and its Data tab shows players' data (editable through `Data.Set`). All of it only runs in Studio, and the traffic counters have an on/off switch (the **Profiler** switch on the Network page, or the button on the Network tab for one Play); off means nothing is counted.
 
-**Apply the hints in one click.** Press **Profile** on Branch Studio's Network page, play, then press **Finish** on the Network tab of Branch (live). The hints appear under Problems on the Overview page; clicking one changes that type in your declaration (one undo step). Profile is needed because Play runs in a copy of the place, and only a session started this way can hand data back to the place you edit.
+**Apply the hints in one click.** Press **Profile** on Branch Studio's Network page, play, then press **Finish** on the Network tab of Branch (live). The hints appear under Problems on the Overview page; pick one and press **Apply** to change that type in your declaration (one undo step). Profile is needed because Play runs in a copy of the place, and only a session started this way can hand data back to the place you edit.
 
 ---
 

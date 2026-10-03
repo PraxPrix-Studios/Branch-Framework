@@ -35,6 +35,7 @@ local QUEUE_LIMIT = 256
 local INF = math.huge
 local NAMES: { string } = {}
 local READ: { any } = {}
+local RUN: { any } = {} -- run readers: a run of one event in one call
 local PENDING: { [number]: thread } = {}
 local FAILED = newproxy()
 local callCounter = 0
@@ -47,7 +48,12 @@ local LPK: { any } = {} -- Latest with Key: keys waiting for the flush
 local GATE: { any } = {} -- Hz: seconds between sends
 local GDUE: { any } = {}
 
-local PROFILE = false -- built without the Studio profiler
+-- Studio-only traffic counters for Branch (live). The BranchProfile attribute
+-- on Branch.Network switches them while you Play (false = off: nothing is
+-- counted or published). Never on in a live server.
+local PROFILE_ALLOWED = false -- built without the Studio profiler
+local PROFILE = false
+local PROOT: any = Root
 local SNAMES: { string } = {}
 local PS_COUNT: { [number]: number } = {}
 local PS_BYTES: { [number]: number } = {}
@@ -97,11 +103,37 @@ local function publish()
 	for k, s in PNUM do
 		out[#out + 1] = `N|{k}|{s[1]}|{s[2]}|{s[3]}|{s[4]}`
 	end
-	(Root :: any):SetAttribute("BranchNetStatsClient", table.concat(out, "\n"))
+	PROOT:SetAttribute("BranchNetStatsClient", table.concat(out, "\n"))
 end
 
-if PROFILE and (Root :: any).SetAttribute ~= nil then
-	RunService.Heartbeat:Connect(publish)
+local publishing: RBXScriptConnection? = nil
+local function setProfile(on: boolean)
+	if on == PROFILE then
+		return
+	end
+	PROFILE = on
+	if on then
+		publishing = RunService.Heartbeat:Connect(publish)
+	else
+		if publishing then
+			publishing:Disconnect()
+			publishing = nil
+		end
+		table.clear(PS_COUNT)
+		table.clear(PS_BYTES)
+		table.clear(PR_COUNT)
+		table.clear(PR_BYTES)
+		table.clear(PNUM)
+		lastPublish = -1
+		PROOT:SetAttribute("BranchNetStatsClient", nil)
+	end
+end
+
+if PROFILE_ALLOWED and PROOT.SetAttribute ~= nil then
+	setProfile(PROOT:GetAttribute("BranchProfile") ~= false)
+	PROOT:GetAttributeChangedSignal("BranchProfile"):Connect(function()
+		setProfile(PROOT:GetAttribute("BranchProfile") ~= false)
+	end)
 end
 
 local function rvar(b: buffer, c: number, first: number): (number, number)
@@ -163,6 +195,12 @@ local runTo: { number } = {}
 local runHead: { boolean } = {}
 
 local function pack(src: buffer, n: number, starts: { number }, count: number): buffer
+	if count == 1 then
+		-- one event: no runs to find, one exact copy
+		local out = buffer_create(n)
+		buffer_copy(out, 0, src, 0, n)
+		return out
+	end
 	local runs = 0
 	local size = n
 	local i = 1
@@ -385,10 +423,16 @@ local function process(b: buffer, r: { any }, len: number, st: { any }, c: numbe
 	-- finish a run that a throwing listener cut short
 	local left = st[3]
 	if left > 0 then
-		local reader = st[4]
-		for index = left - 1, 0, -1 do
-			st[3] = index
-			c, ri = reader(b, c, r, ri, st)
+		local runner = st[5]
+		if runner then
+			c, ri = runner(b, c, r, ri, st, left)
+			st[5] = false
+		else
+			local reader = st[4]
+			for index = left - 1, 0, -1 do
+				st[3] = index
+				c, ri = reader(b, c, r, ri, st)
+			end
 		end
 		st[3] = 0
 	end
@@ -408,10 +452,17 @@ local function process(b: buffer, r: { any }, len: number, st: { any }, c: numbe
 				error(`bad run of event {id}`, 0)
 			end
 			local bodies = c
-			st[4] = reader
-			for index = count - 1, 0, -1 do
-				st[3] = index
-				c, ri = reader(b, c, r, ri, st)
+			local runner = RUN[id]
+			if runner then
+				st[5] = runner
+				c, ri = runner(b, c, r, ri, st, count)
+				st[5] = false
+			else
+				st[4] = reader
+				for index = count - 1, 0, -1 do
+					st[3] = index
+					c, ri = reader(b, c, r, ri, st)
+				end
 			end
 			st[3] = 0
 			if c - bodies < count then
@@ -430,7 +481,7 @@ end
 local function receive(b: buffer, r: { any }?)
 	local refs = r or EMPTY
 	local len = buffer_len(b)
-	local st = { -1, 0, 0, false }
+	local st = { -1, 0, 0, false, false }
 	local c, ri = 0, 0
 	while true do
 		local ok, problem = xpcall(process, trace, b, refs, len, st, c, ri)
@@ -566,32 +617,65 @@ NAMES[1] = "Bench.Moves"
 rebuild(1)
 READ[1] = function(b: buffer, c: number, r: { any }, ri: number, st: { any }): (number, number)
 	local p0 = c
-	local m8 = buffer_readu8(b, c)
-	local x4 = bit32_btest(m8, 1)
-	local x5 = bit32_btest(m8, 2)
-	local x6 = bit32_btest(m8, 4)
-	local x1_1 = buffer_readf32(b, c + 1)
-	local x1_2 = buffer_readf32(b, c + 5)
-	local x1_3 = buffer_readf32(b, c + 9)
-	local x1 = Vector3_new(x1_1, x1_2, x1_3)
-	local x2_1 = buffer_readf32(b, c + 13)
-	local x2_2 = buffer_readf32(b, c + 17)
-	local x2_3 = buffer_readf32(b, c + 21)
-	local x2 = Vector3_new(x2_1, x2_2, x2_3)
-	local x3 = buffer_readf32(b, c + 25)
-	local x7 = buffer_readu8(b, c + 29)
+	local m_8 = buffer_readu8(b, c)
+	local x_4 = bit32_btest(m_8, 1)
+	local x_5 = bit32_btest(m_8, 2)
+	local x_6 = bit32_btest(m_8, 4)
+	local x_1_1 = buffer_readf32(b, c + 1)
+	local x_1_2 = buffer_readf32(b, c + 5)
+	local x_1_3 = buffer_readf32(b, c + 9)
+	local x_1 = Vector3_new(x_1_1, x_1_2, x_1_3)
+	local x_2_1 = buffer_readf32(b, c + 13)
+	local x_2_2 = buffer_readf32(b, c + 17)
+	local x_2_3 = buffer_readf32(b, c + 21)
+	local x_2 = Vector3_new(x_2_1, x_2_2, x_2_3)
+	local x_3 = buffer_readf32(b, c + 25)
+	local x_7 = buffer_readu8(b, c + 29)
 	c += 30
-	local a1 = x1
-	local a2 = x2
-	local a3 = x3
-	local a4 = x4
-	local a5 = x5
-	local a6 = x6
-	local a7 = x7
+	local a1 = x_1
+	local a2 = x_2
+	local a3 = x_3
+	local a4 = x_4
+	local a5 = x_5
+	local a6 = x_6
+	local a7 = x_7
 	if PROFILE then precv(1, c - p0) end
 	st[1], st[2] = c, ri
 	ON[1](a1, a2, a3, a4, a5, a6, a7)
 	st[1] = -1
+	return c, ri
+end
+RUN[1] = function(b: buffer, c: number, r: { any }, ri: number, st: { any }, count: number): (number, number)
+	for index = count - 1, 0, -1 do
+		st[3] = index
+		local p0 = c
+		local m_16 = buffer_readu8(b, c)
+		local x_12 = bit32_btest(m_16, 1)
+		local x_13 = bit32_btest(m_16, 2)
+		local x_14 = bit32_btest(m_16, 4)
+		local x_9_1 = buffer_readf32(b, c + 1)
+		local x_9_2 = buffer_readf32(b, c + 5)
+		local x_9_3 = buffer_readf32(b, c + 9)
+		local x_9 = Vector3_new(x_9_1, x_9_2, x_9_3)
+		local x_10_1 = buffer_readf32(b, c + 13)
+		local x_10_2 = buffer_readf32(b, c + 17)
+		local x_10_3 = buffer_readf32(b, c + 21)
+		local x_10 = Vector3_new(x_10_1, x_10_2, x_10_3)
+		local x_11 = buffer_readf32(b, c + 25)
+		local x_15 = buffer_readu8(b, c + 29)
+		c += 30
+		local a1 = x_9
+		local a2 = x_10
+		local a3 = x_11
+		local a4 = x_12
+		local a5 = x_13
+		local a6 = x_14
+		local a7 = x_15
+		if PROFILE then precv(1, c - p0) end
+		st[1], st[2] = c, ri
+		ON[1](a1, a2, a3, a4, a5, a6, a7)
+		st[1] = -1
+	end
 	return c, ri
 end
 
@@ -605,9 +689,9 @@ READ[2] = function(b: buffer, c: number, r: { any }, ri: number): (number, numbe
 	local thread = PENDING[callId]
 	PENDING[callId] = nil
 	if status == 1 then
-		local x9 = buffer_readf64(b, c)
+		local x_17 = buffer_readf64(b, c)
 		c += 8
-		local v1 = x9
+		local v1 = x_17
 		if thread then task.spawn(thread, v1) end
 	elseif thread then
 		task.spawn(thread, FAILED)
@@ -627,38 +711,38 @@ local Services = {
 				local more = last == 1
 				if c + 13 > cap then b = grow(c, c + 13) end
 				if more then c -= 1 else buffer_writeu8(b, c, 1) end
-				local m10 = (if a4 then 1 else 0)
-				buffer_writeu8(b, c + 1, m10)
+				local m_18 = (if a4 then 1 else 0)
+				buffer_writeu8(b, c + 1, m_18)
 				buffer_writeu16(b, c + 2, a3)
 				buffer_writeu8(b, c + 4, a5)
 				buffer_writef64(b, c + 5, a6)
 				c += 13
-				local s11 = a1 :: string
-				local n12 = #s11
-				if c + n12 + 5 > cap then b = grow(c, c + n12 + 5) end
-				local v13 = n12
-				while v13 >= 128 do
-					buffer_writeu8(b, c, v13 % 128 + 128)
-					v13 //= 128
+				local s_19 = a1 :: string
+				local n_20 = #s_19
+				if c + n_20 + 5 > cap then b = grow(c, c + n_20 + 5) end
+				local v_21 = n_20
+				while v_21 >= 128 do
+					buffer_writeu8(b, c, v_21 % 128 + 128)
+					v_21 //= 128
 					c += 1
 				end
-				buffer_writeu8(b, c, v13)
+				buffer_writeu8(b, c, v_21)
 				c += 1
-				buffer_writestring(b, c, s11)
-				c += n12
-				local s14 = a2 :: string
-				local n15 = #s14
-				if c + n15 + 5 > cap then b = grow(c, c + n15 + 5) end
-				local v16 = n15
-				while v16 >= 128 do
-					buffer_writeu8(b, c, v16 % 128 + 128)
-					v16 //= 128
+				buffer_writestring(b, c, s_19)
+				c += n_20
+				local s_22 = a2 :: string
+				local n_23 = #s_22
+				if c + n_23 + 5 > cap then b = grow(c, c + n_23 + 5) end
+				local v_24 = n_23
+				while v_24 >= 128 do
+					buffer_writeu8(b, c, v_24 % 128 + 128)
+					v_24 //= 128
 					c += 1
 				end
-				buffer_writeu8(b, c, v16)
+				buffer_writeu8(b, c, v_24)
 				c += 1
-				buffer_writestring(b, c, s14)
-				c += n15
+				buffer_writestring(b, c, s_22)
+				c += n_23
 				cur, refn, last = c, rn, 1
 				evn += 1
 				evs[evn] = if more then -c0 else c0

@@ -41,6 +41,9 @@ local function newGame()
 	function RunService:IsServer()
 		return true
 	end
+	function RunService:IsStudio()
+		return false -- a live server: the Studio-only report stays off
+	end
 	local errors = {}
 	local env = {
 		game = {

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Branch · Roblox game framework</title>
-<meta name="description" content="Branch is a Roblox game framework: segments with a strict lifecycle, player data that cannot be corrupted, and compiled networking that outruns Blink and NetRay.">
+<meta name="description" content="Branch is a Roblox game framework: segments with a strict lifecycle, player data that cannot be corrupted, and compiled networking that outruns NetRay, Blink, BlinkBlox, QuickNet and Warp.">
 <link rel="icon" href="assets/mark.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
@@ -68,7 +68,7 @@
 <ul class="pillars">
   <li><b>Segments</b><span>Your game is made of <em>segments</em>: modules named <code>…Service</code> on the server and <code>…Controller</code> on the client. Branch finds them, runs <code>Init</code> in dependency order, then <code>Start</code>, and gives you player and frame hooks. <a href="guide/segments.html">Segments guide</a></span></li>
   <li><b>Branch.Data</b><span>Player data on ProfileStore, with typed paths like <code>"stats.kills"</code>. Every write is checked against your template, so a typo, a wrong type or a NaN can never reach a save. <a href="guide/data.html">Player data guide</a></span></li>
-  <li><b>Branch.Network</b><span>Declare events on your services and get compiled buffer networking with batching, bit-packing and server-side validation, plus one-word options that send less: <code>Latest</code>, <code>Hz</code>, <code>Lod</code>, <code>Delta</code>, <code>Pack</code>. It beats Blink and NetRay in every benchmark except a function round trip, which ties. <a href="guide/network.html">Networking guide</a></span></li>
+  <li><b>Branch.Network</b><span>Declare events on your services and get compiled buffer networking with batching, bit-packing and server-side validation, plus one-word options that send less: <code>Latest</code>, <code>Hz</code>, <code>Lod</code>, <code>Delta</code>, <code>Pack</code>. In our benchmarks it beats NetRay, Blink, BlinkBlox, QuickNet and Warp in nearly every case, including BlinkBlox's own benchmark suite. <a href="benchmarks.html">Benchmarks</a> · <a href="guide/network.html">Networking guide</a></span></li>
 </ul>
 
 <h2>A taste</h2>

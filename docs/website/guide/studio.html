@@ -28,15 +28,17 @@
 </tbody></table></div>
 
 <h2>Pages</h2>
+<p>The rail on the left shows every page with its icon and name; a number on Overview counts its problems, one on Log its warnings and errors.</p>
 <div class="tbl"><table>
 <thead><tr><th>Page</th><th>What it does</th></tr></thead>
 <tbody>
-<tr><td><b>Overview</b></td><td>Install or update the runtime. Live stats. One switch per feature. Problems, including the <a href="#health">health checks</a>: click one to open the script at that line (a smaller-type hint is applied instead). Casing tools.</td></tr>
+<tr><td><b>Overview</b></td><td>Install or update the runtime. Live stats. One switch per feature. Problems, including the <a href="#health">health checks</a>: click one to pick it, double-click to open the script at that line; the ones Branch Studio can fix itself get a button (<b>Solve</b>, <b>Apply</b>, <b>Accept</b>), and nothing changes until you press it. Casing tools.</td></tr>
 <tr><td><b>Network</b></td><td>Every event with its direction, reliability, sync mode, wire signature and bytes per fire, and badges for its send-less options (latest, Hz, lod, delta, pack, rate). A filter box. Click an event to open its declaration. <b>Profile</b> starts a profiling Play session (see below). The <b>Profiler</b> switch turns the traffic counters on or off for every Play.</td></tr>
 <tr><td><b>Segments</b></td><td>Every service and controller in the order their <code>Init</code> runs, with what each one needs and who uses it. A dependency cycle is red. Click a segment to open it. See <a href="#segments-page">Segments page</a>.</td></tr>
 <tr><td><b>DataStores</b></td><td>Browse stores and keys. Values appear as a virtualised tree, so 50,000 keys scroll as fast as 20. Edit inline or as JSON. Version history with preview and restore. A size meter shows how close a key is to the 4 MB limit. ProfileStore profiles are recognised, including which server holds the session lock. <b>Test migrations</b> runs your migrations on a copy of a save (see <a href="#test-migrations">below</a>). <b>Try sample</b> lets you explore offline.</td></tr>
+<tr><td><b>Keybinds</b></td><td>Roblox input actions on a drawn keyboard, mouse and gamepad: contexts, actions, keys, conflicts, and one-click links to controller functions. See <a href="#keybinds">Keybinds</a>.</td></tr>
 <tr><td><b>Community</b></td><td>How many games use Branch, the games, people with roles, search any Roblox user, profile cards, your profile code, and for owners the Admin panel. See <a href="#community">Community</a>.</td></tr>
-<tr><td><b>Settings</b></td><td>Four tabs: <b>Appearance</b> (themes, background, colors, layout, lite mode: see <a href="#appearance">Appearance</a>), <b>Project</b>, <b>Network</b> and <b>Editor</b> (every setting below).</td></tr>
+<tr><td><b>Settings</b></td><td>Four tabs: <b>Appearance</b> (its own tabs Theme, Background, Colors and Layout: see <a href="#appearance">Appearance</a>), <b>Project</b>, <b>Network</b> and <b>Editor</b> (every setting below).</td></tr>
 <tr><td><b>Log</b></td><td>Everything the plugin did. Click an entry to open its script.</td></tr>
 </tbody></table></div>
 
@@ -56,15 +58,16 @@
   </li>
   <li><strong>Safe install and update.</strong> The plugin remembers which runtime files it installed, with a fingerprint of each. On update, files that are no longer shipped are removed, and files you edited by hand are copied to <code>ServerStorage.BranchBackups</code> before they are replaced. Your generated files and settings are kept. A Branch 1 runtime is never touched until you press <b>Update</b>.</li>
   <li><strong>Branch (live) while you Play.</strong> One window with the game's traffic, every <code>Init</code> time and players' data. See <a href="#live">Branch (live)</a>.</li>
-  <li><strong>Smaller types in one click.</strong> Press <b>Profile</b> on the Network page, play, then press <b>Finish</b> on the Network tab of Branch (live). The hints appear under Problems; clicking one changes that type in your declaration (one undo step) and compiles again. See <a href="network.html#profile">Apply the hints with one click</a>.</li>
+  <li><strong>Smaller types in one click.</strong> Press <b>Profile</b> on the Network page, play, then press <b>Finish</b> on the Network tab of Branch (live). The hints appear under Problems; pick one and press <b>Apply</b> to change that type in your declaration (one undo step) and compile again. See <a href="network.html#profile">Apply the hints with one click</a>.</li>
   <li><strong>Live DataStores are read-only.</strong> Browsing real data is safe by default. To edit, save, restore a version or delete, click the lock twice: that allows writes to live data until Studio closes. <b>Try sample</b> stays editable.</li>
-  <li><strong>Data template warnings.</strong> The plugin remembers your data template's shape. If a field is removed or changes type (a number becoming a string, say), saved player data will not follow on its own, so a warning in Problems asks for a migration; click it once the migration is written. New fields need nothing: ProfileStore adds them to old saves.</li>
+  <li><strong>Data template warnings.</strong> The plugin remembers your data template's shape. If a field is removed or changes type (a number becoming a string, say), saved player data will not follow on its own, so a warning in Problems asks for a migration; once the migration is written, pick the warning and press <b>Accept</b>. New fields need nothing: ProfileStore adds them to old saves.</li>
   <li><strong>Honest renames.</strong> References the rename could not update safely — a path through a variable, a chain split across lines — are listed in the Log, with a click to open each one.</li>
   <li><strong>Checks engine names.</strong> A mistyped <code>Enum(...)</code> is an error (the last working network stays), and an unknown <code>Instance(...)</code> class is a warning.</li>
   <li><strong>Light on slow machines.</strong>
     <ul>
       <li>Modules are re-read only when their text changed, and networking is regenerated only when a declaration or a network setting changed.</li>
       <li>The wait before a compile grows on slower machines, and only ModuleScripts wake the plugin.</li>
+      <li>At rest the window costs nothing per frame: every animation stops its clock when it finishes and starts it again only when something changes.</li>
       <li><b>Lite mode</b> (Settings › Appearance) turns off animations, gradients, see-through panels and the background, and keeps only the open page in memory.</li>
     </ul>
   </li>
@@ -72,7 +75,7 @@
 </ul>
 
 <h2 id="health">Health checks</h2>
-<p>Every compile also looks for mistakes that would otherwise show up only in a running game. They appear under Problems on the Overview page; click one to open the script at that line. Nothing is run: the checks read your code.</p>
+<p>Every compile also looks for mistakes that would otherwise show up only in a running game. They appear under Problems on the Overview page; double-click one (or pick it and press <b>Open</b>) to open the script at that line. Nothing is run: the checks read your code.</p>
 <div class="tbl"><table>
 <thead><tr><th>Kind</th><th>What it finds</th></tr></thead>
 <tbody>
@@ -103,23 +106,48 @@
 <h2 id="test-migrations">Test migrations</h2>
 <p>Before you ship a new migration, try it on a real save. On the <b>DataStores</b> page, open a player's key and press <b>Test migrations</b> (the arrow button next to Versions). Studio starts Play for a moment, your game's own <code>Migrations</code> run on a copy of that save, and you see what the player would get: the result as a read-only tree, and either "the result fits the template" or the migration that failed and why. Nothing is written, and the result cannot be restored over the save. The same works on <b>Try sample</b>.</p>
 
+<h2 id="keybinds">Keybinds</h2>
+<p>The <b>Keybinds</b> page edits Roblox's input actions: <code>InputContext</code> (a group that is on or off together, like Gameplay or Menu), <code>InputAction</code> (Jump, Move) and <code>InputBinding</code> (the keys). They live in a <code>Keybinds</code> folder inside the Branch module, in ReplicatedStorage, so every client has them before its scripts run. The instances are the truth: the Explorer, copy and paste, Team Create and undo all work, and every change on the page is one undo step.</p>
+<ul>
+  <li><b>Contexts</b>: chips at the top. <b>On at start</b>, <b>Priority</b> (a higher one is asked first) and <b>Sink</b> (lower contexts do not get the same keys). A context that is off at start is turned on from code: <code>Branch.Keybinds.Menu.Enabled = true</code>.</li>
+  <li><b>Actions</b>: a Button (true while held), an Axis (-1 to 1), a 2D or 3D direction, or a screen position. The list shows each action's keys and what it calls.</li>
+  <li><b>Keyboard and Gamepad</b>: pick an action, then click keys to give them to it; click again to take one back. The selected action's keys are in your accent color, other actions' keys are muted, a key two actions share is red, and a dot marks keys another context uses. Directions pick a slot first (Up, Down, Left, Right; Forward and Back in 3D) and move to the next slot after each click, so WASD is four clicks. Presets: WASD, Arrows, Left stick, Right stick, D-pad, Triggers, Fly keys. Keyboard keys can take a modifier (Ctrl, Alt, Shift).</li>
+  <li><b>Calls in code</b>: pick a controller and a function (existing or new) and press <b>Link</b>. Branch Studio writes the hookup at the top of the controller's <code>:Start()</code>, and adds the function when it is missing:
+<pre><code>function InputController:Start()
+	-- BRANCH_KEYBINDS_START (Branch Studio writes this block from the Keybinds page; edits here are replaced)
+	local Keybinds = game:GetService("ReplicatedStorage").Packages.Branch.Keybinds
+	Keybinds.Gameplay.Jump.Pressed:Connect(function()
+		self:Jump()
+	end)
+	Keybinds.Gameplay.Move.StateChanged:Connect(function(value: Vector2)
+		self:Move(value)
+	end)
+	-- BRANCH_KEYBINDS_END
+	-- your code
+end</code></pre>
+  Only the marked block is Branch Studio's; the rest of the controller stays yours. The block finds the folder by its path, so it works with any runtime version and needs no <code>WaitForChild</code>. Renaming an action or context on the page rewrites the blocks.</li>
+  <li><b>Problems</b>: a link to a controller or function that no longer exists, two contexts or actions with one name (code reaches only the first), a block edited by hand, and a block that lost one of its marker lines show under Problems. For a block edited by hand, pick it and press <b>Solve</b> to write it again; a block with a missing marker is never rewritten (that could take the code between the markers), so delete what is left of it first.</li>
+  <li><b>Names</b>: a context or action cannot take a name Roblox already uses on those instances (<code>Changed</code>, <code>Destroy</code>, <code>Enabled</code>, <code>Pressed</code>...): <code>Keybinds.Gameplay.Changed</code> would be the event, not your action.</li>
+  <li><b>Shift</b>: while Roblox's Shift Lock is allowed (<b>StarterPlayer › EnableMouseLockOption</b>, on by default) it takes both Shift keys, so bindings on Shift never fire; the page warns about them. Turn Shift Lock off or use Ctrl or Alt.</li>
+  <li><b>Types</b>: <code>Branch.Keybinds</code> is typed with every context and action, so <code>Branch.Keybinds.Gameplay.Jump.Pressed</code> autocompletes.</li>
+</ul>
+
 <h2 id="appearance">Appearance</h2>
-<p><b>Settings › Appearance</b> changes how the plugin looks. It is yours alone (saved with your Studio, never in the place), and a friend can take your look with a theme code.</p>
+<p><b>Settings › Appearance</b> changes how the plugin looks, in four tabs: Theme, Background, Colors and Layout. It is yours alone (saved with your Studio, never in the place), and a friend can take your look with a theme code.</p>
 <div class="tbl"><table>
 <thead><tr><th>Part</th><th>What you can change</th></tr></thead>
 <tbody>
-<tr><td><b>Theme</b></td><td>Auto (follows Studio's light or dark theme), Midnight, Daylight, Graphite, Frost, Ember, Aurora (a gradient with light glass panels), Rose, High contrast. Every theme is checked for readable text.</td></tr>
+<tr><td><b>Theme</b></td><td>Auto (follows Studio's light or dark theme), Midnight, Daylight, Graphite, Frost, Ember, Aurora (a gradient with light glass panels), Rose, High contrast. Midnight, Frost, Ember and Rose bring their own softly blurred picture behind glass panels (free for everyone); a background you set yourself stays when you change the theme. Every theme is checked for readable text, and someone new starts on Frost. <b>Copy theme</b> gives a one-line code of letters and digits (<code>BT1-…</code>: colors and background; a picture goes by its id), <b>Paste theme</b> takes one. <b>My themes</b> keeps looks in slots (see <a href="#community">below</a>).</td></tr>
 <tr><td><b>Background</b></td><td>None, a color, a gradient (up to 6 colors, an angle, an optional very slow drift) or a picture. For a picture: paste its id, or select an ImageLabel, ImageButton or Decal in the Explorer and press <b>Use selected</b> (a Decal id is turned into its image id). Then <b>Blur</b>, <b>Dim</b>, <b>Tint</b> (your accent over it), <b>Fit</b> (Fill, Fit, Tile), <b>Focus</b> (which part stays in view), <b>Keep text readable</b> (a bright picture is dimmed a little more), <b>Match colors to picture</b> and your last five backgrounds. <b>Glass</b> sets how much shows through the panels, <b>Edge shade</b> darkens the top and bottom.</td></tr>
-<tr><td><b>Colors</b></td><td>The 8 main colors, or all 18, each with a color picker and a way back to the theme's own. <b>Copy theme</b> gives a one-line code of letters and digits (<code>BT1-…</code>: colors and background; a picture goes by its id), <b>Paste theme</b> takes one.</td></tr>
-<tr><td><b>Layout</b></td><td>Density (Compact, Comfortable), Corners (Sharp, Soft, Round), Text size (S, M, L).</td></tr>
-<tr><td><b>Performance</b></td><td><b>Lite mode</b> for slower computers, and <b>Animations</b> on or off.</td></tr>
+<tr><td><b>Colors</b></td><td>The 8 main colors, or all 18, each with a color picker and a way back to the theme's own; <b>Reset colors</b> takes them all back.</td></tr>
+<tr><td><b>Layout</b></td><td>Density (Compact, Comfortable), Corners (Sharp, Soft, Round), Text size (S, M, L). Under it, <b>Performance</b>: <b>Lite mode</b> for slower computers, and <b>Animations</b> on or off.</td></tr>
 </tbody></table></div>
 <p><b>Pictures you uploaded</b> (you or your group) get a real blur, Focus and Match colors: Roblox lets plugins read only those. Any other picture still works as a background, with a lighter blur made of a few shifted copies, and the page says so. The blur is made once when you let go of the slider, so it costs nothing while you work; moving Dim or Tint never rebuilds the pages.</p>
 
 <h2 id="community">Community, roles and unlocks</h2>
 <ul>
   <li><b>My themes</b> (Settings › Appearance): save the current look in a slot and switch back in one click. 2 slots are free; slots 3 to 8 are a game pass each.</li>
-  <li><b>Image backgrounds</b> are a game pass. Colors, gradients and every theme stay free. Without the pass an image background (yours or from a theme code) shows as no background.</li>
+  <li><b>Image backgrounds</b> of your own are a game pass. Colors, gradients, every theme and the themes' own pictures stay free. Without the pass a picture of your own (or one from a theme code) shows as no background.</li>
   <li><b>Unlock</b> lists every pass with its price and a link to copy (plugins cannot open the Roblox purchase prompt in Studio). Buy it on roblox.com: while the panel is open the plugin checks every few seconds, so it unlocks right away. Ownership always comes from Roblox.</li>
   <li><b>Roles</b>: Owner, Tester and VIP. Every role has everything unlocked and can add a profile background. A role shows next to the name; users without one show no badge.</li>
   <li><b>Community</b> page: how many games use Branch (the games on published profiles), the games built with Branch, the people with roles, and search for any Roblox username. A profile card shows the avatar, role, theme (with <b>Try this theme</b>) and games.</li>
@@ -166,7 +194,7 @@
 </tbody></table></div>
 
 <h2>Automation</h2>
-<p>Code with plugin permissions can drive the plugin by setting the widget attribute <code>BranchCommand</code> to <code>tab:&lt;page&gt;</code>, <code>compile</code>, <code>install</code>, <code>sample</code>, <code>expandAll</code>, <code>profile</code> (start a profiling session), <code>hint:&lt;n&gt;</code> (apply the n-th type hint), <code>migrateSample</code> (test migrations on the sample profile), <code>look:&lt;theme code&gt;</code> (apply a theme code), <code>appearance:&lt;json&gt;</code> (the whole appearance, lite mode included), <code>section:&lt;tab&gt;</code> (a Settings tab: Appearance, Project, Network, Editor), <code>copySettings</code> / <code>offerSettings</code> / <code>applySettings</code> (the Settings code card's steps), <code>profile:&lt;userId&gt;</code> (open a profile card), <code>unlock</code> (the Unlock panel) or <code>complete</code> (the segment-name suggestions for the open script's cursor, written to the widget's <code>BranchCompleteResult</code> attribute). While you Play, the Branch (live) widget's <code>BranchLiveTab</code> attribute picks a tab (<code>Network</code>, <code>Startup</code>, <code>Data</code>).</p>
+<p>Code with plugin permissions can drive the plugin by setting the widget attribute <code>BranchCommand</code> to <code>tab:&lt;page&gt;</code>, <code>compile</code>, <code>install</code>, <code>sample</code>, <code>expandAll</code>, <code>profile</code> (start a profiling session), <code>hint:&lt;n&gt;</code> (apply the n-th type hint), <code>migrateSample</code> (test migrations on the sample profile), <code>look:&lt;theme code&gt;</code> (apply a theme code), <code>appearance:&lt;json&gt;</code> (the whole appearance, lite mode included), <code>section:&lt;tab&gt;</code> (a Settings tab: Appearance, Project, Network, Editor; <code>section:Appearance/Background</code> also picks an Appearance tab: Theme, Background, Colors, Layout), <code>appearance?</code> (the saved look as JSON in the widget's <code>BranchAppearanceResult</code> attribute), <code>copySettings</code> / <code>offerSettings</code> / <code>applySettings</code> (the Settings code card's steps), <code>profile:&lt;userId&gt;</code> (open a profile card), <code>unlock</code> (the Unlock panel), <code>keys:&lt;json&gt;</code> (a Keybinds call such as <code>{"call":"starter"}</code> or <code>{"call":"addAction","args":["Gameplay","Dash","Bool"]}</code>; the answer lands in <code>BranchKeybindsResult</code>), <code>keypick:&lt;context&gt;/&lt;action&gt;</code> and <code>keydevice:Keyboard|Gamepad</code> (the Keybinds page's selection), <code>problem:&lt;n&gt;</code> (pick the n-th problem), <code>solve</code> (the picked problem's fix button), <code>perf</code> (the plugin's own cost over 3 seconds: time per frame, start time, memory, each page's build time, as JSON in the widget's <code>BranchPerfResult</code> attribute) or <code>complete</code> (the segment-name suggestions for the open script's cursor, written to the widget's <code>BranchCompleteResult</code> attribute). While you Play, the Branch (live) widget's <code>BranchLiveTab</code> attribute picks a tab (<code>Network</code>, <code>Startup</code>, <code>Data</code>).</p>
 </main>
 </div>
 <script src="../assets/site.js"></script>

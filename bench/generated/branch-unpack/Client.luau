@@ -18,6 +18,7 @@ local buffer_readu8 = buffer.readu8
 local buffer_writef64 = buffer.writef64
 local buffer_writestring = buffer.writestring
 local buffer_writeu16 = buffer.writeu16
+local buffer_writeu32 = buffer.writeu32
 local buffer_writeu8 = buffer.writeu8
 local math_max = math.max
 
@@ -33,6 +34,7 @@ local QUEUE_LIMIT = 256
 local INF = math.huge
 local NAMES: { string } = {}
 local READ: { any } = {}
+local RUN: { any } = {} -- run readers: a run of one event in one call
 local PENDING: { [number]: thread } = {}
 local FAILED = newproxy()
 local callCounter = 0
@@ -45,7 +47,12 @@ local LPK: { any } = {} -- Latest with Key: keys waiting for the flush
 local GATE: { any } = {} -- Hz: seconds between sends
 local GDUE: { any } = {}
 
-local PROFILE = false -- built without the Studio profiler
+-- Studio-only traffic counters for Branch (live). The BranchProfile attribute
+-- on Branch.Network switches them while you Play (false = off: nothing is
+-- counted or published). Never on in a live server.
+local PROFILE_ALLOWED = false -- built without the Studio profiler
+local PROFILE = false
+local PROOT: any = Root
 local SNAMES: { string } = {}
 local PS_COUNT: { [number]: number } = {}
 local PS_BYTES: { [number]: number } = {}
@@ -95,11 +102,37 @@ local function publish()
 	for k, s in PNUM do
 		out[#out + 1] = `N|{k}|{s[1]}|{s[2]}|{s[3]}|{s[4]}`
 	end
-	(Root :: any):SetAttribute("BranchNetStatsClient", table.concat(out, "\n"))
+	PROOT:SetAttribute("BranchNetStatsClient", table.concat(out, "\n"))
 end
 
-if PROFILE and (Root :: any).SetAttribute ~= nil then
-	RunService.Heartbeat:Connect(publish)
+local publishing: RBXScriptConnection? = nil
+local function setProfile(on: boolean)
+	if on == PROFILE then
+		return
+	end
+	PROFILE = on
+	if on then
+		publishing = RunService.Heartbeat:Connect(publish)
+	else
+		if publishing then
+			publishing:Disconnect()
+			publishing = nil
+		end
+		table.clear(PS_COUNT)
+		table.clear(PS_BYTES)
+		table.clear(PR_COUNT)
+		table.clear(PR_BYTES)
+		table.clear(PNUM)
+		lastPublish = -1
+		PROOT:SetAttribute("BranchNetStatsClient", nil)
+	end
+end
+
+if PROFILE_ALLOWED and PROOT.SetAttribute ~= nil then
+	setProfile(PROOT:GetAttribute("BranchProfile") ~= false)
+	PROOT:GetAttributeChangedSignal("BranchProfile"):Connect(function()
+		setProfile(PROOT:GetAttribute("BranchProfile") ~= false)
+	end)
 end
 
 local function rvar(b: buffer, c: number, first: number): (number, number)
@@ -161,6 +194,12 @@ local runTo: { number } = {}
 local runHead: { boolean } = {}
 
 local function pack(src: buffer, n: number, starts: { number }, count: number): buffer
+	if count == 1 then
+		-- one event: no runs to find, one exact copy
+		local out = buffer_create(n)
+		buffer_copy(out, 0, src, 0, n)
+		return out
+	end
 	local runs = 0
 	local size = n
 	local i = 1
@@ -383,10 +422,16 @@ local function process(b: buffer, r: { any }, len: number, st: { any }, c: numbe
 	-- finish a run that a throwing listener cut short
 	local left = st[3]
 	if left > 0 then
-		local reader = st[4]
-		for index = left - 1, 0, -1 do
-			st[3] = index
-			c, ri = reader(b, c, r, ri, st)
+		local runner = st[5]
+		if runner then
+			c, ri = runner(b, c, r, ri, st, left)
+			st[5] = false
+		else
+			local reader = st[4]
+			for index = left - 1, 0, -1 do
+				st[3] = index
+				c, ri = reader(b, c, r, ri, st)
+			end
 		end
 		st[3] = 0
 	end
@@ -406,10 +451,17 @@ local function process(b: buffer, r: { any }, len: number, st: { any }, c: numbe
 				error(`bad run of event {id}`, 0)
 			end
 			local bodies = c
-			st[4] = reader
-			for index = count - 1, 0, -1 do
-				st[3] = index
-				c, ri = reader(b, c, r, ri, st)
+			local runner = RUN[id]
+			if runner then
+				st[5] = runner
+				c, ri = runner(b, c, r, ri, st, count)
+				st[5] = false
+			else
+				st[4] = reader
+				for index = count - 1, 0, -1 do
+					st[3] = index
+					c, ri = reader(b, c, r, ri, st)
+				end
 			end
 			st[3] = 0
 			if c - bodies < count then
@@ -428,7 +480,7 @@ end
 local function receive(b: buffer, r: { any }?)
 	local refs = r or EMPTY
 	local len = buffer_len(b)
-	local st = { -1, 0, 0, false }
+	local st = { -1, 0, 0, false, false }
 	local c, ri = 0, 0
 	while true do
 		local ok, problem = xpcall(process, trace, b, refs, len, st, c, ri)
@@ -564,32 +616,65 @@ NAMES[1] = "Bench.Moves"
 rebuild(1)
 READ[1] = function(b: buffer, c: number, r: { any }, ri: number, st: { any }): (number, number)
 	local p0 = c
-	local m8 = buffer_readu8(b, c)
-	local x4 = bit32_btest(m8, 1)
-	local x5 = bit32_btest(m8, 2)
-	local x6 = bit32_btest(m8, 4)
-	local x1_1 = buffer_readf32(b, c + 1)
-	local x1_2 = buffer_readf32(b, c + 5)
-	local x1_3 = buffer_readf32(b, c + 9)
-	local x1 = Vector3_new(x1_1, x1_2, x1_3)
-	local x2_1 = buffer_readf32(b, c + 13)
-	local x2_2 = buffer_readf32(b, c + 17)
-	local x2_3 = buffer_readf32(b, c + 21)
-	local x2 = Vector3_new(x2_1, x2_2, x2_3)
-	local x3 = buffer_readf32(b, c + 25)
-	local x7 = buffer_readu8(b, c + 29)
+	local m_8 = buffer_readu8(b, c)
+	local x_4 = bit32_btest(m_8, 1)
+	local x_5 = bit32_btest(m_8, 2)
+	local x_6 = bit32_btest(m_8, 4)
+	local x_1_1 = buffer_readf32(b, c + 1)
+	local x_1_2 = buffer_readf32(b, c + 5)
+	local x_1_3 = buffer_readf32(b, c + 9)
+	local x_1 = Vector3_new(x_1_1, x_1_2, x_1_3)
+	local x_2_1 = buffer_readf32(b, c + 13)
+	local x_2_2 = buffer_readf32(b, c + 17)
+	local x_2_3 = buffer_readf32(b, c + 21)
+	local x_2 = Vector3_new(x_2_1, x_2_2, x_2_3)
+	local x_3 = buffer_readf32(b, c + 25)
+	local x_7 = buffer_readu8(b, c + 29)
 	c += 30
-	local a1 = x1
-	local a2 = x2
-	local a3 = x3
-	local a4 = x4
-	local a5 = x5
-	local a6 = x6
-	local a7 = x7
+	local a1 = x_1
+	local a2 = x_2
+	local a3 = x_3
+	local a4 = x_4
+	local a5 = x_5
+	local a6 = x_6
+	local a7 = x_7
 	if PROFILE then precv(1, c - p0) end
 	st[1], st[2] = c, ri
 	ON[1](a1, a2, a3, a4, a5, a6, a7)
 	st[1] = -1
+	return c, ri
+end
+RUN[1] = function(b: buffer, c: number, r: { any }, ri: number, st: { any }, count: number): (number, number)
+	for index = count - 1, 0, -1 do
+		st[3] = index
+		local p0 = c
+		local m_16 = buffer_readu8(b, c)
+		local x_12 = bit32_btest(m_16, 1)
+		local x_13 = bit32_btest(m_16, 2)
+		local x_14 = bit32_btest(m_16, 4)
+		local x_9_1 = buffer_readf32(b, c + 1)
+		local x_9_2 = buffer_readf32(b, c + 5)
+		local x_9_3 = buffer_readf32(b, c + 9)
+		local x_9 = Vector3_new(x_9_1, x_9_2, x_9_3)
+		local x_10_1 = buffer_readf32(b, c + 13)
+		local x_10_2 = buffer_readf32(b, c + 17)
+		local x_10_3 = buffer_readf32(b, c + 21)
+		local x_10 = Vector3_new(x_10_1, x_10_2, x_10_3)
+		local x_11 = buffer_readf32(b, c + 25)
+		local x_15 = buffer_readu8(b, c + 29)
+		c += 30
+		local a1 = x_9
+		local a2 = x_10
+		local a3 = x_11
+		local a4 = x_12
+		local a5 = x_13
+		local a6 = x_14
+		local a7 = x_15
+		if PROFILE then precv(1, c - p0) end
+		st[1], st[2] = c, ri
+		ON[1](a1, a2, a3, a4, a5, a6, a7)
+		st[1] = -1
+	end
 	return c, ri
 end
 
@@ -600,32 +685,65 @@ NAMES[2] = "Bench.MovesU"
 rebuild(2)
 READ[2] = function(b: buffer, c: number, r: { any }, ri: number, st: { any }): (number, number)
 	local p0 = c
-	local m16 = buffer_readu8(b, c)
-	local x12 = bit32_btest(m16, 1)
-	local x13 = bit32_btest(m16, 2)
-	local x14 = bit32_btest(m16, 4)
-	local x9_1 = buffer_readf32(b, c + 1)
-	local x9_2 = buffer_readf32(b, c + 5)
-	local x9_3 = buffer_readf32(b, c + 9)
-	local x9 = Vector3_new(x9_1, x9_2, x9_3)
-	local x10_1 = buffer_readf32(b, c + 13)
-	local x10_2 = buffer_readf32(b, c + 17)
-	local x10_3 = buffer_readf32(b, c + 21)
-	local x10 = Vector3_new(x10_1, x10_2, x10_3)
-	local x11 = buffer_readf32(b, c + 25)
-	local x15 = buffer_readu8(b, c + 29)
+	local m_24 = buffer_readu8(b, c)
+	local x_20 = bit32_btest(m_24, 1)
+	local x_21 = bit32_btest(m_24, 2)
+	local x_22 = bit32_btest(m_24, 4)
+	local x_17_1 = buffer_readf32(b, c + 1)
+	local x_17_2 = buffer_readf32(b, c + 5)
+	local x_17_3 = buffer_readf32(b, c + 9)
+	local x_17 = Vector3_new(x_17_1, x_17_2, x_17_3)
+	local x_18_1 = buffer_readf32(b, c + 13)
+	local x_18_2 = buffer_readf32(b, c + 17)
+	local x_18_3 = buffer_readf32(b, c + 21)
+	local x_18 = Vector3_new(x_18_1, x_18_2, x_18_3)
+	local x_19 = buffer_readf32(b, c + 25)
+	local x_23 = buffer_readu8(b, c + 29)
 	c += 30
-	local a1 = x9
-	local a2 = x10
-	local a3 = x11
-	local a4 = x12
-	local a5 = x13
-	local a6 = x14
-	local a7 = x15
+	local a1 = x_17
+	local a2 = x_18
+	local a3 = x_19
+	local a4 = x_20
+	local a5 = x_21
+	local a6 = x_22
+	local a7 = x_23
 	if PROFILE then precv(2, c - p0) end
 	st[1], st[2] = c, ri
 	ON[2](a1, a2, a3, a4, a5, a6, a7)
 	st[1] = -1
+	return c, ri
+end
+RUN[2] = function(b: buffer, c: number, r: { any }, ri: number, st: { any }, count: number): (number, number)
+	for index = count - 1, 0, -1 do
+		st[3] = index
+		local p0 = c
+		local m_32 = buffer_readu8(b, c)
+		local x_28 = bit32_btest(m_32, 1)
+		local x_29 = bit32_btest(m_32, 2)
+		local x_30 = bit32_btest(m_32, 4)
+		local x_25_1 = buffer_readf32(b, c + 1)
+		local x_25_2 = buffer_readf32(b, c + 5)
+		local x_25_3 = buffer_readf32(b, c + 9)
+		local x_25 = Vector3_new(x_25_1, x_25_2, x_25_3)
+		local x_26_1 = buffer_readf32(b, c + 13)
+		local x_26_2 = buffer_readf32(b, c + 17)
+		local x_26_3 = buffer_readf32(b, c + 21)
+		local x_26 = Vector3_new(x_26_1, x_26_2, x_26_3)
+		local x_27 = buffer_readf32(b, c + 25)
+		local x_31 = buffer_readu8(b, c + 29)
+		c += 30
+		local a1 = x_25
+		local a2 = x_26
+		local a3 = x_27
+		local a4 = x_28
+		local a5 = x_29
+		local a6 = x_30
+		local a7 = x_31
+		if PROFILE then precv(2, c - p0) end
+		st[1], st[2] = c, ri
+		ON[2](a1, a2, a3, a4, a5, a6, a7)
+		st[1] = -1
+	end
 	return c, ri
 end
 
@@ -645,31 +763,82 @@ local Services = {
 				if c + 1 > cap then b = grow(c, c + 1) end
 				if more then c -= 1 else buffer_writeu8(b, c, 1) end
 				c += 1
-				local arr17 = a1
-				local n18 = #arr17
-				if c + 5 + (n18 + 7) // 8 > cap then b = grow(c, c + 5 + (n18 + 7) // 8) end
-				local v24 = n18
-				while v24 >= 128 do
-					buffer_writeu8(b, c, v24 % 128 + 128)
-					v24 //= 128
+				local arr_33 = a1
+				local n_34 = #arr_33
+				if c + 5 + (n_34 + 7) // 8 > cap then b = grow(c, c + 5 + (n_34 + 7) // 8) end
+				local v_48 = n_34
+				while v_48 >= 128 do
+					buffer_writeu8(b, c, v_48 % 128 + 128)
+					v_48 //= 128
 					c += 1
 				end
-				buffer_writeu8(b, c, v24)
+				buffer_writeu8(b, c, v_48)
 				c += 1
-				local full22 = n18 // 8
-				local j21 = 0
-				for _ = 1, full22 do
-					buffer_writeu8(b, c, (if arr17[j21 + 1] then 1 else 0) + (if arr17[j21 + 2] then 2 else 0) + (if arr17[j21 + 3] then 4 else 0) + (if arr17[j21 + 4] then 8 else 0) + (if arr17[j21 + 5] then 16 else 0) + (if arr17[j21 + 6] then 32 else 0) + (if arr17[j21 + 7] then 64 else 0) + (if arr17[j21 + 8] then 128 else 0))
-					c += 1
-					j21 += 8
+				local j_37 = 0
+				for _ = 1, n_34 // 32 do
+					local bits_39 = 0
+					local p_40, p_41, p_42, p_43, p_44, p_45, p_46, p_47 = arr_33[j_37 + 1], arr_33[j_37 + 2], arr_33[j_37 + 3], arr_33[j_37 + 4], arr_33[j_37 + 5], arr_33[j_37 + 6], arr_33[j_37 + 7], arr_33[j_37 + 8]
+					if p_40 then bits_39 += 1 end
+					if p_41 then bits_39 += 2 end
+					if p_42 then bits_39 += 4 end
+					if p_43 then bits_39 += 8 end
+					if p_44 then bits_39 += 16 end
+					if p_45 then bits_39 += 32 end
+					if p_46 then bits_39 += 64 end
+					if p_47 then bits_39 += 128 end
+					p_40, p_41, p_42, p_43, p_44, p_45, p_46, p_47 = arr_33[j_37 + 9], arr_33[j_37 + 10], arr_33[j_37 + 11], arr_33[j_37 + 12], arr_33[j_37 + 13], arr_33[j_37 + 14], arr_33[j_37 + 15], arr_33[j_37 + 16]
+					if p_40 then bits_39 += 256 end
+					if p_41 then bits_39 += 512 end
+					if p_42 then bits_39 += 1024 end
+					if p_43 then bits_39 += 2048 end
+					if p_44 then bits_39 += 4096 end
+					if p_45 then bits_39 += 8192 end
+					if p_46 then bits_39 += 16384 end
+					if p_47 then bits_39 += 32768 end
+					p_40, p_41, p_42, p_43, p_44, p_45, p_46, p_47 = arr_33[j_37 + 17], arr_33[j_37 + 18], arr_33[j_37 + 19], arr_33[j_37 + 20], arr_33[j_37 + 21], arr_33[j_37 + 22], arr_33[j_37 + 23], arr_33[j_37 + 24]
+					if p_40 then bits_39 += 65536 end
+					if p_41 then bits_39 += 131072 end
+					if p_42 then bits_39 += 262144 end
+					if p_43 then bits_39 += 524288 end
+					if p_44 then bits_39 += 1048576 end
+					if p_45 then bits_39 += 2097152 end
+					if p_46 then bits_39 += 4194304 end
+					if p_47 then bits_39 += 8388608 end
+					p_40, p_41, p_42, p_43, p_44, p_45, p_46, p_47 = arr_33[j_37 + 25], arr_33[j_37 + 26], arr_33[j_37 + 27], arr_33[j_37 + 28], arr_33[j_37 + 29], arr_33[j_37 + 30], arr_33[j_37 + 31], arr_33[j_37 + 32]
+					if p_40 then bits_39 += 16777216 end
+					if p_41 then bits_39 += 33554432 end
+					if p_42 then bits_39 += 67108864 end
+					if p_43 then bits_39 += 134217728 end
+					if p_44 then bits_39 += 268435456 end
+					if p_45 then bits_39 += 536870912 end
+					if p_46 then bits_39 += 1073741824 end
+					if p_47 then bits_39 += 2147483648 end
+					buffer_writeu32(b, c, bits_39)
+					c += 4
+					j_37 += 32
 				end
-				local rest23 = n18 - j21
-				if rest23 > 0 then
-					local byte20 = 0
-					for i19 = 1, rest23 do
-						if arr17[j21 + i19] then byte20 += 2 ^ (i19 - 1) end
+				for _ = 1, (n_34 - j_37) // 8 do
+					local bits_39 = 0
+					local p_40, p_41, p_42, p_43, p_44, p_45, p_46, p_47 = arr_33[j_37 + 1], arr_33[j_37 + 2], arr_33[j_37 + 3], arr_33[j_37 + 4], arr_33[j_37 + 5], arr_33[j_37 + 6], arr_33[j_37 + 7], arr_33[j_37 + 8]
+					if p_40 then bits_39 += 1 end
+					if p_41 then bits_39 += 2 end
+					if p_42 then bits_39 += 4 end
+					if p_43 then bits_39 += 8 end
+					if p_44 then bits_39 += 16 end
+					if p_45 then bits_39 += 32 end
+					if p_46 then bits_39 += 64 end
+					if p_47 then bits_39 += 128 end
+					buffer_writeu8(b, c, bits_39)
+					c += 1
+					j_37 += 8
+				end
+				local rest_38 = n_34 - j_37
+				if rest_38 > 0 then
+					local byte_36 = 0
+					for i_35 = 1, rest_38 do
+						if arr_33[j_37 + i_35] then byte_36 += 2 ^ (i_35 - 1) end
 					end
-					buffer_writeu8(b, c, byte20)
+					buffer_writeu8(b, c, byte_36)
 					c += 1
 				end
 				cur, refn, last = c, rn, 1
@@ -687,38 +856,38 @@ local Services = {
 				local more = last == 2
 				if c + 13 > cap then b = grow(c, c + 13) end
 				if more then c -= 1 else buffer_writeu8(b, c, 2) end
-				local m25 = (if a4 then 1 else 0)
-				buffer_writeu8(b, c + 1, m25)
+				local m_49 = (if a4 then 1 else 0)
+				buffer_writeu8(b, c + 1, m_49)
 				buffer_writeu16(b, c + 2, a3)
 				buffer_writeu8(b, c + 4, a5)
 				buffer_writef64(b, c + 5, a6)
 				c += 13
-				local s26 = a1 :: string
-				local n27 = #s26
-				if c + n27 + 5 > cap then b = grow(c, c + n27 + 5) end
-				local v28 = n27
-				while v28 >= 128 do
-					buffer_writeu8(b, c, v28 % 128 + 128)
-					v28 //= 128
+				local s_50 = a1 :: string
+				local n_51 = #s_50
+				if c + n_51 + 5 > cap then b = grow(c, c + n_51 + 5) end
+				local v_52 = n_51
+				while v_52 >= 128 do
+					buffer_writeu8(b, c, v_52 % 128 + 128)
+					v_52 //= 128
 					c += 1
 				end
-				buffer_writeu8(b, c, v28)
+				buffer_writeu8(b, c, v_52)
 				c += 1
-				buffer_writestring(b, c, s26)
-				c += n27
-				local s29 = a2 :: string
-				local n30 = #s29
-				if c + n30 + 5 > cap then b = grow(c, c + n30 + 5) end
-				local v31 = n30
-				while v31 >= 128 do
-					buffer_writeu8(b, c, v31 % 128 + 128)
-					v31 //= 128
+				buffer_writestring(b, c, s_50)
+				c += n_51
+				local s_53 = a2 :: string
+				local n_54 = #s_53
+				if c + n_54 + 5 > cap then b = grow(c, c + n_54 + 5) end
+				local v_55 = n_54
+				while v_55 >= 128 do
+					buffer_writeu8(b, c, v_55 % 128 + 128)
+					v_55 //= 128
 					c += 1
 				end
-				buffer_writeu8(b, c, v31)
+				buffer_writeu8(b, c, v_55)
 				c += 1
-				buffer_writestring(b, c, s29)
-				c += n30
+				buffer_writestring(b, c, s_53)
+				c += n_54
 				cur, refn, last = c, rn, 2
 				evn += 1
 				evs[evn] = if more then -c0 else c0
@@ -736,19 +905,19 @@ local Services = {
 				if more then c -= 1 else buffer_writeu8(b, c, 3) end
 				buffer_writeu8(b, c + 1, a2)
 				c += 2
-				local s32 = a1 :: string
-				local n33 = #s32
-				if c + n33 + 5 > cap then b = grow(c, c + n33 + 5) end
-				local v34 = n33
-				while v34 >= 128 do
-					buffer_writeu8(b, c, v34 % 128 + 128)
-					v34 //= 128
+				local s_56 = a1 :: string
+				local n_57 = #s_56
+				if c + n_57 + 5 > cap then b = grow(c, c + n_57 + 5) end
+				local v_58 = n_57
+				while v_58 >= 128 do
+					buffer_writeu8(b, c, v_58 % 128 + 128)
+					v_58 //= 128
 					c += 1
 				end
-				buffer_writeu8(b, c, v34)
+				buffer_writeu8(b, c, v_58)
 				c += 1
-				buffer_writestring(b, c, s32)
-				c += n33
+				buffer_writestring(b, c, s_56)
+				c += n_57
 				cur, refn, last = c, rn, 3
 				evn += 1
 				evs[evn] = if more then -c0 else c0
@@ -764,25 +933,25 @@ local Services = {
 				if c + 1 > cap then b = grow(c, c + 1) end
 				if more then c -= 1 else buffer_writeu8(b, c, 4) end
 				c += 1
-				local arr35 = a1
-				local n36 = #arr35
-				if c + 5 + n36 * 6 > cap then b = grow(c, c + 5 + n36 * 6) end
-				local v39 = n36
-				while v39 >= 128 do
-					buffer_writeu8(b, c, v39 % 128 + 128)
-					v39 //= 128
+				local arr_59 = a1
+				local n_60 = #arr_59
+				if c + 5 + n_60 * 6 > cap then b = grow(c, c + 5 + n_60 * 6) end
+				local v_63 = n_60
+				while v_63 >= 128 do
+					buffer_writeu8(b, c, v_63 % 128 + 128)
+					v_63 //= 128
 					c += 1
 				end
-				buffer_writeu8(b, c, v39)
+				buffer_writeu8(b, c, v_63)
 				c += 1
-				for i37 = 1, n36 do
-					local item38 = arr35[i37]
-					buffer_writeu8(b, c, item38.id)
-					buffer_writeu8(b, c + 1, item38.x)
-					buffer_writeu8(b, c + 2, item38.y)
-					buffer_writeu8(b, c + 3, item38.z)
-					buffer_writeu8(b, c + 4, item38.orientation)
-					buffer_writeu8(b, c + 5, item38.animation)
+				for i_61 = 1, n_60 do
+					local item_62 = arr_59[i_61]
+					buffer_writeu8(b, c, item_62.id)
+					buffer_writeu8(b, c + 1, item_62.x)
+					buffer_writeu8(b, c + 2, item_62.y)
+					buffer_writeu8(b, c + 3, item_62.z)
+					buffer_writeu8(b, c + 4, item_62.orientation)
+					buffer_writeu8(b, c + 5, item_62.animation)
 					c += 6
 				end
 				cur, refn, last = c, rn, 4
