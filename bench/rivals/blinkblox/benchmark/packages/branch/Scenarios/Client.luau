@@ -30,8 +30,8 @@ local BUDGET = 820
 local QUEUE_LIMIT = 256
 local INF = math.huge
 local NAMES: { string } = {}
-local READ: { any } = {}
-local RUN: { any } = {} -- run readers: a run of one event in one call
+local READ: { any } = table.create(3)
+local RUN: { any } = table.create(3) -- run readers: a run of one event in one call
 local PENDING: { [number]: thread } = {}
 local FAILED = newproxy()
 local callCounter = 0
@@ -43,93 +43,101 @@ local LAS: { any } = {}
 local LPK: { any } = {} -- Latest with Key: keys waiting for the flush
 local GATE: { any } = {} -- Hz: seconds between sends
 local GDUE: { any } = {}
+local GPHASE: { any } = {} -- where on its time grid each gate opens
 
 -- Studio-only traffic counters for Branch (live). The BranchProfile attribute
 -- on Branch.Network switches them while you Play (false = off: nothing is
 -- counted or published). Never on in a live server.
-local PROFILE_ALLOWED = false -- built without the Studio profiler
+-- Only what readers and writers touch stays at the top (a module has room for
+-- 200 locals); the rest lives in the block below.
 local PROFILE = false
-local PROOT: any = Root
 local SNAMES: { string } = {}
-local PS_COUNT: { [number]: number } = {}
-local PS_BYTES: { [number]: number } = {}
-local PR_COUNT: { [number]: number } = {}
-local PR_BYTES: { [number]: number } = {}
-local PNUM: { [string]: { number } } = {}
+local psent: (id: number, bytes: number) -> ()
+local precv: (id: number, bytes: number) -> ()
+local pnum: (id: number, field: string, v: any, declared: string, names: { string }?) -> ()
+do
+	local PROFILE_ALLOWED = false -- built without the Studio profiler
+	local PROOT: any = Root
+	local PS_COUNT: { [number]: number } = {}
+	local PS_BYTES: { [number]: number } = {}
+	local PR_COUNT: { [number]: number } = {}
+	local PR_BYTES: { [number]: number } = {}
+	local PNUM: { [string]: { number } } = {}
 
-local function psent(id: number, bytes: number)
-	PS_COUNT[id] = (PS_COUNT[id] or 0) + 1
-	PS_BYTES[id] = (PS_BYTES[id] or 0) + bytes
-end
+	function psent(id: number, bytes: number)
+		PS_COUNT[id] = (PS_COUNT[id] or 0) + 1
+		PS_BYTES[id] = (PS_BYTES[id] or 0) + bytes
+	end
 
-local function precv(id: number, bytes: number)
-	PR_COUNT[id] = (PR_COUNT[id] or 0) + 1
-	PR_BYTES[id] = (PR_BYTES[id] or 0) + bytes
-end
+	function precv(id: number, bytes: number)
+		PR_COUNT[id] = (PR_COUNT[id] or 0) + 1
+		PR_BYTES[id] = (PR_BYTES[id] or 0) + bytes
+	end
 
-local function pnum(id: number, field: string, v: any, declared: string, names: { string }?)
-	if type(v) ~= "number" or v ~= v then
-		return
-	end
-	local k = ((names or SNAMES)[id] or "?") .. "|" .. field
-	local s = PNUM[k]
-	if not s then
-		PNUM[k] = { v, v, if v % 1 == 0 then 1 else 0, declared :: any }
-		return
-	end
-	if v < s[1] then s[1] = v end
-	if v > s[2] then s[2] = v end
-	if v % 1 ~= 0 then s[3] = 0 end
-end
-
-local lastPublish = -1
-local function publish()
-	local now = os.clock()
-	if now - lastPublish < 1 then
-		return
-	end
-	lastPublish = now
-	local out = {}
-	for id, n in PS_COUNT do
-		out[#out + 1] = `S|{SNAMES[id] or "?"}|{n}|{PS_BYTES[id]}`
-	end
-	for id, n in PR_COUNT do
-		out[#out + 1] = `R|{NAMES[id] or "?"}|{n}|{PR_BYTES[id]}`
-	end
-	for k, s in PNUM do
-		out[#out + 1] = `N|{k}|{s[1]}|{s[2]}|{s[3]}|{s[4]}`
-	end
-	PROOT:SetAttribute("BranchNetStatsClient", table.concat(out, "\n"))
-end
-
-local publishing: RBXScriptConnection? = nil
-local function setProfile(on: boolean)
-	if on == PROFILE then
-		return
-	end
-	PROFILE = on
-	if on then
-		publishing = RunService.Heartbeat:Connect(publish)
-	else
-		if publishing then
-			publishing:Disconnect()
-			publishing = nil
+	function pnum(id: number, field: string, v: any, declared: string, names: { string }?)
+		if type(v) ~= "number" or v ~= v then
+			return
 		end
-		table.clear(PS_COUNT)
-		table.clear(PS_BYTES)
-		table.clear(PR_COUNT)
-		table.clear(PR_BYTES)
-		table.clear(PNUM)
-		lastPublish = -1
-		PROOT:SetAttribute("BranchNetStatsClient", nil)
+		local k = ((names or SNAMES)[id] or "?") .. "|" .. field
+		local s = PNUM[k]
+		if not s then
+			PNUM[k] = { v, v, if v % 1 == 0 then 1 else 0, declared :: any }
+			return
+		end
+		if v < s[1] then s[1] = v end
+		if v > s[2] then s[2] = v end
+		if v % 1 ~= 0 then s[3] = 0 end
 	end
-end
 
-if PROFILE_ALLOWED and PROOT.SetAttribute ~= nil then
-	setProfile(PROOT:GetAttribute("BranchProfile") ~= false)
-	PROOT:GetAttributeChangedSignal("BranchProfile"):Connect(function()
+	local lastPublish = -1
+	local function publish()
+		local now = os.clock()
+		if now - lastPublish < 1 then
+			return
+		end
+		lastPublish = now
+		local out = {}
+		for id, n in PS_COUNT do
+			out[#out + 1] = `S|{SNAMES[id] or "?"}|{n}|{PS_BYTES[id]}`
+		end
+		for id, n in PR_COUNT do
+			out[#out + 1] = `R|{NAMES[id] or "?"}|{n}|{PR_BYTES[id]}`
+		end
+		for k, s in PNUM do
+			out[#out + 1] = `N|{k}|{s[1]}|{s[2]}|{s[3]}|{s[4]}`
+		end
+		PROOT:SetAttribute("BranchNetStatsClient", table.concat(out, "\n"))
+	end
+
+	local publishing: RBXScriptConnection? = nil
+	local function setProfile(on: boolean)
+		if on == PROFILE then
+			return
+		end
+		PROFILE = on
+		if on then
+			publishing = RunService.Heartbeat:Connect(publish)
+		else
+			if publishing then
+				publishing:Disconnect()
+				publishing = nil
+			end
+			table.clear(PS_COUNT)
+			table.clear(PS_BYTES)
+			table.clear(PR_COUNT)
+			table.clear(PR_BYTES)
+			table.clear(PNUM)
+			lastPublish = -1
+			PROOT:SetAttribute("BranchNetStatsClient", nil)
+		end
+	end
+
+	if PROFILE_ALLOWED and PROOT.SetAttribute ~= nil then
 		setProfile(PROOT:GetAttribute("BranchProfile") ~= false)
-	end)
+		PROOT:GetAttributeChangedSignal("BranchProfile"):Connect(function()
+			setProfile(PROOT:GetAttribute("BranchProfile") ~= false)
+		end)
+	end
 end
 
 local function fail(label: string, expected: string, value: any): never
@@ -189,16 +197,17 @@ end
 -- per run. Runs shorter than 3, or whose bodies hold less than a byte per
 -- event (the receiver's DoS bound: argument-less events), get their ids back.
 -- Pass 1 sizes the output exactly, pass 2 writes it: one allocation, and a
--- frame without repeats is a single copy.
+-- frame without repeats is a single copy. `front` bytes are left free at the
+-- start for what goes before the events (strict mode's tag, the heartbeat).
 local runFrom: { number } = {}
 local runTo: { number } = {}
 local runHead: { boolean } = {}
 
-local function pack(src: buffer, n: number, starts: { number }, count: number): buffer
+local function pack(src: buffer, n: number, starts: { number }, count: number, front: number): buffer
 	if count == 1 then
 		-- one event: no runs to find, one exact copy
-		local out = buffer_create(n)
-		buffer_copy(out, 0, src, 0, n)
+		local out = buffer_create(front + n)
+		buffer_copy(out, front, src, 0, n)
 		return out
 	end
 	local runs = 0
@@ -225,12 +234,12 @@ local function pack(src: buffer, n: number, starts: { number }, count: number): 
 		end
 		i = j + 1
 	end
-	local out = buffer_create(size)
+	local out = buffer_create(front + size)
 	if runs == 0 then
-		buffer_copy(out, 0, src, 0, n)
+		buffer_copy(out, front, src, 0, n)
 		return out
 	end
-	local o = 0
+	local o = front
 	local pending = 0
 	for r = 1, runs do
 		local from, to = runFrom[r], runTo[r]
@@ -341,20 +350,17 @@ local function openStream(s: number)
 	end
 end
 
-local function closeStream(_s: number) end
-
 -- The budget counts what packing adds back to runs, so no packet goes over.
 local function closeUnreliable(start: number, refStart: number)
 	local run = if evs[evn] < 0 then uRun + 1 else 1
 	local extra = uExtra + (if run > 1 then runGrowth(run) else 0)
 	if start > 0 and cur + extra + refn * 8 > BUDGET then
 		local headRefs = if refStart > 0 then table.move(refs, 1, refStart, 1, table.create(refStart)) else nil
-		Unreliable:FireServer(pack(buf, start, evs, evn - 1), headRefs)
+		Unreliable:FireServer(pack(buf, start, evs, evn - 1, 0), headRefs)
 		keepTail(start, refStart, evn)
 		run, extra = 1, 0
 	end
 	uRun, uExtra = run, extra
-	closeStream(2)
 end
 
 -- Ships one stream now (end of frame, or right away for Invoke).
@@ -364,7 +370,7 @@ local function ship(s: number)
 		return
 	end
 	local rn = sRefn[s]
-	local out = pack(sBuf[s], n, sEvs[s], sEvn[s])
+	local out = pack(sBuf[s], n, sEvs[s], sEvn[s], 0)
 	local r = if rn > 0 then sRefs[s] else nil
 	if s == 1 then
 		Reliable:FireServer(out, r)
@@ -410,6 +416,7 @@ RunService.Heartbeat:Connect(flush)
 
 local EMPTY = table.freeze({})
 local ERR = "malformed packet"
+local BAD = "bad value"
 
 -- `st` (one per packet) = { c after the event being dispatched (-1 while
 -- decoding), its ri, events left in the current run, the run's reader }:
@@ -499,34 +506,37 @@ local function receive(b: buffer, r: { any }?)
 	end
 end
 
-local LS: { { (...any) -> () } } = {}
-local ON: { (...any) -> () } = {}
+local LS: { { (...any) -> () } } = table.create(3)
+local ON: { (...any) -> () } = table.create(3)
 local SPAWNS: { boolean } = {}
 local Q: { { { n: number, [number]: any } } } = {}
 local QWARNED: { boolean } = {}
 
 -- Reused coroutine runner (spawning a fresh thread per event is the costly part).
-local freeThread: thread? = nil
+local spawn: (fn: (...any) -> (), ...any) -> ()
+do
+	local freeThread: thread? = nil
 
-local function runHandler(fn: (...any) -> (), ...: any)
-	local thread = freeThread
-	freeThread = nil
-	fn(...)
-	freeThread = thread
-end
-
-local function runLoop()
-	while true do
-		runHandler(coroutine.yield())
+	local function runHandler(fn: (...any) -> (), ...: any)
+		local thread = freeThread
+		freeThread = nil
+		fn(...)
+		freeThread = thread
 	end
-end
 
-local function spawn(fn: (...any) -> (), ...: any)
-	if not freeThread then
-		freeThread = coroutine.create(runLoop)
-		coroutine.resume(freeThread :: thread)
+	local function runLoop()
+		while true do
+			runHandler(coroutine.yield())
+		end
 	end
-	task.spawn(freeThread :: thread, fn, ...)
+
+	function spawn(fn: (...any) -> (), ...: any)
+		if not freeThread then
+			freeThread = coroutine.create(runLoop)
+			coroutine.resume(freeThread :: thread)
+		end
+		task.spawn(freeThread :: thread, fn, ...)
+	end
 end
 
 -- Keeps an event for the first listener; false when the queue is full.
@@ -768,7 +778,7 @@ local Services = {
 		Input = table.freeze({
 			Fire = function(a1: { move: number, turn: number, jump: boolean, sprint: boolean })
 				if PROFILE then pnum(1, "move", (a1 :: any).move, "u8"); pnum(1, "turn", (a1 :: any).turn, "i16") end
-				openStream(2)
+				if openS ~= 2 then openStream(2) end
 				local start, refStart = cur, refn
 				local b, c, rn, c0 = buf, cur, refn, cur
 				local more = last == 1
@@ -799,7 +809,7 @@ local Services = {
 		Touch = table.freeze({
 			Fire = function(a1: Instance, a2: number)
 				if PROFILE then pnum(2, "value2", a2, "u8") end
-				openStream(1)
+				if openS ~= 1 then openStream(1) end
 				local b, c, rn, c0 = buf, cur, refn, cur
 				local more = last == 2
 				if c + 2 > cap then b = grow(c, c + 2) end
@@ -813,7 +823,6 @@ local Services = {
 				evn += 1
 				evs[evn] = if more then -c0 else c0
 				if PROFILE then psent(2, c - c0) end
-				closeStream(1)
 			end :: (value1: Instance, value2: number) -> (),
 		}),
 		WorldState = table.freeze({
@@ -827,4 +836,37 @@ local Services = {
 Reliable.OnClientEvent:Connect(receive)
 Unreliable.OnClientEvent:Connect(receive)
 
-return table.freeze({ Services = table.freeze(Services) })
+local function serverOnly()
+	error("Branch.Network.Anticheat: only Check and Report are available on the client; the rest is the server's", 2)
+end
+local anticheatOff = function(): () -> ()
+	if RunService:IsStudio() then
+		warn("Branch.Network.Anticheat: the anticheat is off (Branch Studio > Settings > Network), so client checks do nothing")
+	end
+	return function() end
+end
+local Anticheat = table.freeze({
+	Check = anticheatOff :: (name: string, check: () -> any, every: number?) -> () -> (),
+	Report = anticheatOff :: any,
+	OnFlag = serverOnly :: any,
+	OnChanged = serverOnly :: any,
+	Flag = serverOnly :: any,
+	GetFlagged = serverOnly :: any,
+	GetRecord = serverOnly :: any,
+	Pardon = serverOnly :: any,
+	Restrict = serverOnly :: any,
+	IsRestricted = serverOnly :: any,
+	SetAction = serverOnly :: any,
+	SetWeight = serverOnly :: any,
+	SetLevel = serverOnly :: any,
+	SetDecay = serverOnly :: any,
+	Preset = serverOnly :: any,
+	SetKickMessage = serverOnly :: any,
+	Use = serverOnly :: any,
+	Pause = serverOnly :: any,
+	ShareAcrossServers = serverOnly :: any,
+	GetFlaggedGlobal = serverOnly :: any,
+	OnGlobalChanged = serverOnly :: any,
+})
+
+return table.freeze({ Services = table.freeze(Services), Anticheat = Anticheat })

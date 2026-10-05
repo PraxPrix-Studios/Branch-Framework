@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Anticheat · Branch</title>
+<meta name="description" content="Branch's anticheat: a signed heartbeat, ready-made movement checks, your own checks, scores and levels, an API for admin panels, and strict mode.">
+<link rel="icon" href="assets/mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body data-root="" data-page="anticheat">
+<div class="layout">
+<aside class="side" id="sidebar" aria-label="Documentation"></aside>
+<main class="doc">
+<div class="eyebrow">anticheat</div>
+<h1>Anticheat</h1>
+<p class="lead">Branch protects its network in three layers: the server's rules for every request, an anticheat that watches each client, and an optional strict mode. On top of that you pick the checks your game needs, add your own, and decide what happens to a player: a kick, a report, a score that grows until it acts.</p>
+
+<h2 id="layers">The three layers</h2>
+<div class="tbl"><table>
+<thead><tr><th>Layer</th><th>What it stops</th><th>Cost</th><th>Default</th></tr></thead>
+<tbody>
+<tr><td><a href="guide/network.html#guards">Server rules</a></td><td>Malformed and forged packets, spam, requests that break your <code>Cooldown</code>, <code>Alive</code>, <code>Near</code>, <code>Owned</code> rules, packets made for another game</td><td>Almost none</td><td>Always on</td></tr>
+<tr><td><a href="#checks">Anticheat</a></td><td>Tampered clients, remote spies repeating calls, killed heartbeats; the movement checks you turn on; your own checks</td><td>~4 bytes/s per player, nothing per send</td><td>On</td></tr>
+<tr><td><a href="#strict">Strict mode</a></td><td>Copied, repeated and hand-made packets (refused before any listener), sends from code that is not your game's</td><td>8 bytes per client packet, ~0.09 µs per send</td><td>Off</td></tr>
+</tbody></table></div>
+<p>All three are switched in Branch Studio, Settings › Network: <b>Anticheat</b>, <b>Strict mode</b>, and <b>Kick after forged packets</b> (0 means nobody is ever kicked, only reported). Everything else is code, through <code>Branch.Network.Anticheat</code>.</p>
+
+<div class="note"><b>What no anticheat can promise.</b> An exploit runs inside the player's own client, so a determined exploiter can take any client-side check apart. This one stops scripts made for other games and pasted cheats, and makes every update of your game cost the cheat's author work. What makes cheating pointless is the server deciding results: clients send what they want to do, the server checks it.</div>
+
+<h2 id="checks">Branch's own checks</h2>
+<p>Always on with the anticheat. Every client sends a small signed heartbeat every 5 seconds and checks its own network module. A player is flagged only for what a real client never does, so lag, slow devices and scripts in Actors are never mistaken for cheating.</p>
+<div class="tbl"><table>
+<thead><tr><th>Check</th><th>Flagged when</th></tr></thead>
+<tbody>
+<tr><td><code>heartbeat</code></td><td>a heartbeat is forged or sent again, or a player runs more than 64 copies of the client module</td></tr>
+<tr><td><code>silence</code></td><td>600 reliable packets arrive in a row without a heartbeat: the heartbeat was switched off while the game still sends</td></tr>
+<tr><td><code>raw</code></td><td>the server got more packets than the client's module sent: a remote spy or a script firing the remote directly</td></tr>
+<tr><td><code>tamper</code></td><td>a table of the network module was unfrozen, or one of its functions (or one of your checks) was swapped or hooked</td></tr>
+<tr><td><code>strict</code></td><td><a href="#strict">strict mode</a> refused sends that no script of the game made</td></tr>
+</tbody></table></div>
+
+<h2 id="ready">Ready-made checks</h2>
+<p>Movement checks, off until you turn them on: a racing game wants <code>speed</code>, a pet simulator may want none. They run on the server, so a cheat cannot switch them off. The server looks at every character twice a second, a few per frame.</p>
+<pre><code>local Anticheat = Branch.Network.Anticheat
+
+Anticheat.Use("speed")                      -- the Humanoid's WalkSpeed is the limit
+Anticheat.Use("teleport", { distance = 80 })
+Anticheat.Use("fly", { height = 20, time = 4 })
+Anticheat.Use("noclip")
+Anticheat.Use("fly", false)                 -- off again</code></pre>
+<div class="tbl"><table>
+<thead><tr><th>Check</th><th>Flagged when</th><th>Options (defaults)</th></tr></thead>
+<tbody>
+<tr><td><code>speed</code></td><td>faster than allowed, three samples in a row (1.5 s; a lag burst is one or two)</td><td><code>max</code> studs/s (0: the Humanoid's <code>WalkSpeed</code>), <code>tolerance</code> 1.75; allowed = max × tolerance + 4</td></tr>
+<tr><td><code>teleport</code></td><td>one jump far beyond walking, even when the server sees it spread over two samples</td><td><code>distance</code> 100 studs</td></tr>
+<tr><td><code>fly</code></td><td>no ground within <code>height</code> below, and not coming down, for <code>time</code> seconds</td><td><code>height</code> 16, <code>time</code> 4</td></tr>
+<tr><td><code>noclip</code></td><td>the path between two samples goes through something solid, three times within 10 s (once or twice can be doors)</td><td>none</td></tr>
+</tbody></table></div>
+<ul>
+  <li><strong>Left alone:</strong> a character in its first 3 seconds, seated, dead, on <code>PlatformStand</code> or anchored, and one a script of your game just moved (<code>PivotTo</code>, setting the CFrame): the game's own teleports are never findings.</li>
+  <li><strong>Your game moves a player in other ways</strong> (a dash, a launch pad, a glider): <code>Anticheat.Pause(player, seconds)</code>.</li>
+  <li><strong>By default</strong> each of them kicks at a player's fourth finding. The defaults leave room for lag and odd physics, while real cheats stay far beyond them: speed hacks run 2 to 5 times too fast, teleports cover hundreds of studs, flying has no time limit. Their names are taken: call your own checks something else.</li>
+</ul>
+
+<h2 id="own">Your own checks</h2>
+<p>Add what only your game knows about: impossible stats, a menu that should not open, a weapon used too fast.</p>
+
+<h3 id="client">On the client</h3>
+<pre><code>local Anticheat = Branch.Network.Anticheat
+
+-- runs every 5 s (or every `every` seconds); return a reason, or true, when something is wrong
+local stop = Anticheat.Check("gravity", function()
+	return workspace.Gravity ~= 196.2 and `Gravity {workspace.Gravity}`
+end, 2)
+
+stop() -- takes the check away
+
+-- something your code just saw: sent on the next frame
+Anticheat.Report("menu", "admin menu opened")</code></pre>
+<ul>
+  <li><strong>The report cannot be dropped.</strong> A finding rides the signed heartbeat, so a cheat that blocks it breaks the heartbeat too. A check that gets hooked counts as <code>tamper</code>.</li>
+  <li><strong>A name is taken once.</strong> A second <code>Check</code> with the same name errors, so a cheat cannot swap your check for one that never finds anything. Only the function <code>Check</code> returned can take it away.</li>
+  <li><strong>Checks never hold the game up.</strong> Each runs in its own thread at the start of a frame; one that errors is reported in Studio, one that waits is skipped until it returns. <code>every</code> is 1 second or more.</li>
+  <li><strong>The client only says what it found.</strong> What happens to the player is decided on the server.</li>
+</ul>
+
+<h3 id="server">On the server</h3>
+<pre><code>-- your server checks go the same way as everything else
+if coins - lastCoins &gt; 10000 then
+	Branch.Network.Anticheat.Flag(player, "coins", `+{coins - lastCoins} in one second`)
+end</code></pre>
+
+<h2 id="decide">What happens to a player</h2>
+<p>Every finding is kept in the player's <a href="#admin">record</a>, reported to <code>Anticheat.OnFlag(player, check, detail, score)</code> and to <code>Branch.Network.OnReject</code> (as <code>anticheat: check: detail</code>), and then acts in two ways: through its check's <b>action</b>, and through the player's <b>score</b>. Kicks never happen in Studio (a warning instead) or with Kick after forged packets at 0.</p>
+
+<h3 id="presets">Basic or Advanced</h3>
+<div class="tbl"><table>
+<thead><tr><th>Preset</th><th>How it decides</th></tr></thead>
+<tbody>
+<tr><td><code>"Basic"</code> (default)</td><td>Each check acts on its own: Branch's checks and yours kick at once, the ready-made ones at the fourth finding, <code>strict</code> only reports. No levels.</td></tr>
+<tr><td><code>"Advanced"</code></td><td>Checks only report; the score decides: restricted at 5, kicked at 10, and the score goes down by 1 a minute, so a few lag findings over an hour add up to nothing.</td></tr>
+</tbody></table></div>
+<pre><code>Anticheat.Preset("Advanced") -- then change any part of it below</code></pre>
+
+<h3 id="actions">Actions per check</h3>
+<pre><code>Anticheat.SetAction("coins", "kick", 3)  -- kick at the third finding; the first two only report
+Anticheat.SetAction("menu", "report")    -- never kick, just tell OnFlag
+Anticheat.SetAction("raw", "report")     -- Branch's own checks too
+Anticheat.SetAction("noise", "ignore")   -- not even recorded
+Anticheat.SetKickMessage("Exploits are not allowed here.")</code></pre>
+
+<h3 id="score">Score and levels</h3>
+<p>Each finding adds its check's weight to the player's score. Levels act once each, when the score first reaches them.</p>
+<pre><code>Anticheat.SetWeight("coins", 4)           -- default 1 for your checks
+Anticheat.SetLevel(5, "restrict")
+Anticheat.SetLevel(8, function(player, record)
+	Webhook:Send(`{player.Name} reached {record.score}`)
+end)
+Anticheat.SetLevel(12, "kick")
+Anticheat.SetDecay(0.5)                   -- points forgotten per minute (0: never)</code></pre>
+<div class="tbl"><table>
+<thead><tr><th>Default weight</th><th>Checks</th></tr></thead>
+<tbody>
+<tr><td>10</td><td><code>heartbeat</code>, <code>silence</code>, <code>raw</code>, <code>tamper</code>: one is proof</td></tr>
+<tr><td>3</td><td><code>teleport</code>, <code>fly</code></td></tr>
+<tr><td>2</td><td><code>speed</code>, <code>noclip</code></td></tr>
+<tr><td>1</td><td><code>strict</code> and your own checks</td></tr>
+</tbody></table></div>
+
+<h3 id="restrict">Restricted players</h3>
+<p>A level or <code>Anticheat.Restrict(player)</code> restricts a player without kicking: every request of theirs the server refuses (a bad value, a rate limit, a broken guard) counts as forged, and their rate limits refill at a quarter of the speed. <code>Anticheat.IsRestricted(player)</code> lets your own code be stricter too; <code>Restrict(player, false)</code> lifts it.</p>
+
+<h2 id="admin">Admin panels</h2>
+<p>Branch keeps a record for every player with a finding, while they are in the server. There is no panel to install: these calls give your own panel what it needs.</p>
+<pre><code>local Anticheat = Branch.Network.Anticheat
+
+Anticheat.GetFlagged()             -- every flagged player in the server, highest score first
+Anticheat.GetRecord(player)        -- one player's record, or nil
+Anticheat.OnChanged(function(player, record)
+	-- a finding, a pardon, a restriction; record is nil when the player is gone (pardoned or left)
+end)
+Anticheat.Pardon(player, "speed")  -- forgive one check: its findings and its score
+Anticheat.Pardon(player)           -- forgive everything
+Anticheat.Restrict(player)         -- or Restrict(player, false)</code></pre>
+<p>A record is a frozen copy, so nothing a panel does reaches the anticheat:</p>
+<pre><code>{
+	player = Player,
+	score = 7,
+	restricted = true,
+	checks = { speed = { count = 2, detail = "41 studs/s, 28 allowed", at = 1760000000 } },
+	history = { { check = "speed", detail = "...", at = 1760000000 }, ... }, -- the last 50
+}</code></pre>
+<p>To show it to moderators, send it with an event of your own:</p>
+<pre><code>ModerationService.Network = {
+	Flagged = { From = "Server", Data = { name = "string", score = "f32", checks = "{ [string]: u16 }" } },
+}
+
+Anticheat.OnChanged(function(player, record)
+	local checks = {}
+	for name, entry in record and record.checks or {} do
+		checks[name] = entry.count
+	end
+	Net.Flagged.FireList(moderators, { name = player.Name, score = record and record.score or 0, checks = checks })
+end)</code></pre>
+
+<h3 id="servers">Across servers</h3>
+<p>One line makes every server of your game share its flagged players, so a panel shows them all, live:</p>
+<pre><code>Anticheat.ShareAcrossServers(true)    -- on every server, at start
+
+Anticheat.GetFlaggedGlobal()          -- this server's flagged players and every other server's
+Anticheat.OnGlobalChanged(function(userId, entry)
+	-- entry: { userId, name, score, restricted, checks = { [check] = count }, server, placeId, here }
+	-- nil when the player is gone: they left, were pardoned, or their server closed
+end)</code></pre>
+<ul>
+  <li><strong>Light on Roblox's limits.</strong> Each server publishes only what changed, at most every 3 seconds, in messages under 1 KB on one MessagingService topic. Everything again once a minute, and at once (within 2 s) for a server that just started.</li>
+  <li><strong>Nothing left behind.</strong> An entry goes when its server says so, or after 2.5 minutes without a word from a server that crashed. <code>ShareAcrossServers(false)</code> stops it and the other servers forget this one's players.</li>
+  <li><strong>Needs a published game</strong>, as MessagingService does. In Studio the list holds the server's own players.</li>
+</ul>
+
+<h2 id="strict">Strict mode</h2>
+<p>Off by default; turn it on when a game is a common target.</p>
+<ul>
+  <li><strong>Tagged packets.</strong> Every client packet starts with an 8-byte tag signed with a key of your place and the player. A copied, repeated or hand-made packet is refused before any listener sees it and counts as forged.</li>
+  <li><strong>Sends only from your scripts.</strong> <code>Fire</code>, <code>Invoke</code> and <code>Forget</code> work only when one of your game's scripts made the call. An executor's own code or the command bar is refused, Studio warns once per event, and the heartbeat reports it as <code>strict</code>.</li>
+  <li><strong>One rule for your code:</strong> call a send from a function in your script. <code>task.spawn(Net.Hit.Fire, …)</code> or <code>Connect(Net.Hit.Fire)</code> has no script behind it and is refused; wrap it in a function.</li>
+</ul>
+<pre><code>button.Activated:Connect(function()
+	Net.Hit.Fire(target) -- fine: your function makes the call
+end)</code></pre>
+
+<h2 id="ids">Event ids</h2>
+<p>Every event travels as a number. The first compile in a place picks a random number for each event, spread over the whole range rather than 1, 2, 3, and Branch Studio keeps the list in the place (an attribute of ServerStorage: players never get it, and everyone in Team Create shares it). The heartbeat takes its number from the same list.</p>
+<ul>
+  <li><strong>Other games' scripts do not fit.</strong> A packet or script made for another Branch game lands on numbers this place never uses. The server treats it as forged and kicks after <b>Kick after forged packets</b> of them (3 by default). A "works in every Branch game" cheat cannot exist.</li>
+  <li><strong>The keys come from the ids.</strong> The heartbeat and strict mode's tags are signed with a key made from this list, so it is your place's own as well.</li>
+  <li><strong>Free:</strong> nothing to change in your code, and no cost at run time.</li>
+</ul>
+
+<h3 id="new-ids">New ids</h3>
+<p>Settings › Network › <b>New ids</b> gives every event a new number and the keys change with them.</p>
+<ul>
+  <li><strong>When:</strong> a cheat that sends ready-made packets shows up in your game, or simply with each big update.</li>
+  <li><strong>Then publish.</strong> Players on the new version use the new numbers; a cheat built for the old ones stops fitting. Servers already running keep the old version until their players rejoin, which is fine: each server and its clients always match.</li>
+  <li><strong>Undo:</strong> Ctrl+Z puts the old list back, as long as you have not published.</li>
+</ul>
+<div class="note"><b>A speed bump, not a wall.</b> The numbers are in the client's code, so a cheat's author can read them again after every New ids. And they do nothing against an exploit that calls your own <code>Fire</code>: that is what <a href="#strict">strict mode</a> and the server's rules are for.</div>
+
+<h2 id="api">API</h2>
+<pre><code>-- client
+Anticheat.Check(name, check, every?) -&gt; stop    -- a check of your own
+Anticheat.Report(check, detail?)                -- a finding right now
+-- server: checks
+Anticheat.Use(name, options? | false)           -- "speed" | "teleport" | "fly" | "noclip"
+Anticheat.Pause(player, seconds)                -- your game moves them itself
+Anticheat.Flag(player, check, detail?)          -- a finding of your server code
+-- server: what happens
+Anticheat.Preset("Basic" | "Advanced")
+Anticheat.SetAction(check, action, after?)      -- "kick" | "report" | "ignore"
+Anticheat.SetWeight(check, weight)
+Anticheat.SetLevel(at, "restrict" | "kick" | fn | nil)
+Anticheat.SetDecay(perMinute)
+Anticheat.SetKickMessage(message)
+Anticheat.Restrict(player, on?) / IsRestricted(player)
+-- server: admin panels
+Anticheat.OnFlag(fn(player, check, detail, score)) -&gt; disconnect
+Anticheat.OnChanged(fn(player, record?)) -&gt; disconnect
+Anticheat.GetFlagged() / GetRecord(player) / Pardon(player, check?)
+Anticheat.ShareAcrossServers(on?)
+Anticheat.GetFlaggedGlobal() / OnGlobalChanged(fn(userId, entry?)) -&gt; disconnect</code></pre>
+<p>Signatures and details: <a href="api/network.html#anticheat-check">Branch.Network.Anticheat</a>.</p>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

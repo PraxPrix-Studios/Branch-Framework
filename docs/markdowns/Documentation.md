@@ -155,9 +155,11 @@ local ok = Net.Buy.Invoke("sword")
 
 - **Batching.** Events are batched per player per frame, and FireAll ships once with `FireAllClients`.
 - **Compact encoding.** Repeated events are sent as runs, booleans are bit-packed, and lengths are varints.
-- **Validation.** The server checks everything a client sends before any listener sees it. Malformed packets are reported through `Branch.Network.OnReject`.
+- **Validation.** The server checks everything a client sends before any listener sees it. Malformed packets are reported through `Branch.Network.OnReject` (its third argument is true for forged ones, which also lead to a kick after 3 by default).
 - **Order.** Order is exact for every recipient.
 - **Errors stay contained.** A listener that errors is reported like any script error; the rest of the packet still arrives.
+- **Anticheat** (on by default). Every client signs a small heartbeat and checks its own network module; a player is kicked only for what no real client does (a forged or repeated heartbeat, a tampered module, packets the module never sent). Your own checks join it: `Branch.Network.Anticheat.Check(name, fn, every?)` and `Report(name, detail)` on the client, `Flag(player, name, detail)`, `OnFlag(handler)`, `SetAction(name, "kick" | "report" | "ignore", after?)` and `SetKickMessage(text)` on the server. Also on the server: ready-made movement checks you turn on (`Use("speed" | "teleport" | "fly" | "noclip", options?)`, `Pause`), a score with levels (`SetWeight`, `SetLevel`, `SetDecay`, `Preset("Basic" | "Advanced")`, `Restrict`), and records for admin panels (`GetFlagged`, `GetRecord`, `OnChanged`, `Pardon`), shared across every server of the game with `ShareAcrossServers(true)` (`GetFlaggedGlobal`, `OnGlobalChanged`). The whole picture: the Anticheat page of the docs site.
+- **Strict mode** (Branch Studio, Settings › Network, off by default). Every client packet carries an 8-byte tag, so copied or hand-made packets are refused, and sends work only when one of the game's scripts made them.
 
 **Send less, and limit what clients send** (options on any event):
 
@@ -171,7 +173,11 @@ local ok = Net.Buy.Invoke("sword")
 | `Threshold = { pos = 0.05 }` | With `Delta`: a number or vector that moved less than this counts as unchanged. One number applies to every number and vector field. Small moves add up, so the receiver is never further off than the threshold. |
 | `Predict = { pos = 0.25 }` | With `Delta`, server to client: a number or vector travels with its speed, the client keeps guessing between updates (`Event.At(key)` on the client), and an update goes out only when the guess is off by more than this. A straight walk costs one update; if you stop firing an object to a player, its guess stops where it was fired last. `Event.Exact(key, true)` on the server turns the guessing off for one object (a fight), `Exact(key, false)` turns it back on. |
 | `Pack = true` | Booleans, enums, stepped numbers, whole numbers with a range and bounded lengths are written as bits instead of whole bytes (a `u8(0..100)` is 7 bits). Not with `Delta`, not on functions. |
-| `Rate = "10/s"` | On `From = "Client"` events and functions: sends over the limit are dropped (functions answer "failed"), and `OnReject` hears about it with a reason starting `rate limit:`. |
+| `Rate = "10/s"` | On `From = "Client"` events and functions: sends over the limit are dropped (functions answer "failed"), and `OnReject` hears about it with a reason starting `rate limit:`. Events without one get Branch Studio's Default rate (`3000/s`). |
+| `Cooldown = 0.5` | On `From = "Client"` events and functions: at least that many seconds between a player's accepted requests (a fifth early is allowed, for lag). |
+| `Alive = true` | On `From = "Client"` events and functions: the sender's character has a living Humanoid. |
+| `Near = 20` | On `From = "Client"` events and functions: the first Instance or vector in `Data` is within 20 studs of the sender's character (`Near = { at = 30 }` names the value). |
+| `Owned = true` | On `From = "Client"` events and functions: the first Instance in `Data` is inside the sender's character or backpack (`Owned = "tool"` names it). |
 
 ```lua
 Mob    = { From = "Server", Delta = true, Key = "id", Predict = { pos = 0.25 }, Lod = { { 50, 30 }, { 200, 5 } }, Data = { id = "u16", pos = "vector", hp = "u8" } },

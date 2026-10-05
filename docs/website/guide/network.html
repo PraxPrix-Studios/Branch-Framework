@@ -106,6 +106,7 @@ Aim     = { From = "Client", Hz = 20, Type = "Unreliable", Data = "vector" },</c
   <li><strong>Nothing is lost.</strong> The last value you fired always arrives, at the next send.</li>
   <li><strong>No wait after a pause.</strong> When the event has been quiet, a new value goes out at once.</li>
   <li><strong>Any number up to 60</strong>, fractions included: <code>Hz = 0.5</code> is once every two seconds.</li>
+  <li><strong>Spread over the frames.</strong> Events with the same <code>Hz</code> send on different frames, and with a <code>Key</code> each object gets its own frame between two sends, so the traffic arrives evenly instead of in a burst every few frames.</li>
 </ul>
 
 <h3 id="lod">Lod: often near, rarely far</h3>
@@ -199,7 +200,42 @@ Buy    = { Data = "string(..32)", Return = "boolean", Rate = "30/m" },</code></p
   <li><strong>Over the limit</strong>, events are dropped before any listener sees them, and a function answers "failed", so the client's <code>Invoke</code> errors.</li>
   <li><strong><code>OnReject</code></strong> hears about it at most once a second per player and event, with a reason that starts with <code>rate limit:</code>.</li>
   <li><strong>Only on <code>From = "Client"</code></strong> events and functions: the server does not need a limit on itself.</li>
+  <li><strong>A default for the rest.</strong> Client events and functions without a <code>Rate</code> get the <b>Default rate</b> from Branch Studio (Settings › Network, <code>3000/s</code>): far above any real game, low enough to stop a flood. Empty turns it off.</li>
 </ul>
+
+<h2 id="guards">Guards: the server's rules for a request</h2>
+<p>Any client can fire any client event, exploit scripts included: they run inside the player's own client. So a client sends what it wants to do, and the server decides. Guards are the usual checks, one word each:</p>
+<pre><code>Punch = { From = "Client", Cooldown = 0.5, Alive = true, Data = "u8" },
+Hit   = { From = "Client", Near = 20, Data = { target = "Instance", power = "u8" } },
+Aim   = { From = "Client", Near = { at = 30 }, Data = { at = "vector", from = "vector?" } },
+Use   = { From = "Client", Owned = "tool", Data = { tool = "Instance", slot = "u8" } },</code></pre>
+<div class="tbl"><table>
+<thead><tr><th>Guard</th><th>A request passes when</th></tr></thead>
+<tbody>
+<tr><td><code>Cooldown = 0.5</code></td><td>at least that many seconds passed since this player's last accepted one (a fifth early is allowed, for lag)</td></tr>
+<tr><td><code>Alive = true</code></td><td>the player's character has a Humanoid with Health above 0</td></tr>
+<tr><td><code>Near = 20</code></td><td>the first Instance or vector in <code>Data</code> is within 20 studs of the player's character; <code>Near = { at = 30 }</code> names the value</td></tr>
+<tr><td><code>Owned = true</code></td><td>the first Instance in <code>Data</code> is inside the player's character or backpack; <code>Owned = "tool"</code> names it</td></tr>
+</tbody></table></div>
+<ul>
+  <li><strong>A broken guard drops the request</strong> before any listener sees it; a function answers "failed". <code>OnReject</code> hears about it at most once a second per player and event (<code>cooldown:</code>, <code>not alive:</code>, <code>too far:</code>, <code>not theirs:</code>).</li>
+  <li><strong>Positions:</strong> a vector as it is; a part by its position, a model by its primary part, an attachment by its world position, a player by their character. An optional value that is missing is not checked.</li>
+  <li><strong>Only on <code>From = "Client"</code></strong> events and functions. <code>Near</code> and <code>Owned</code> cannot be combined with <code>Delta</code>.</li>
+</ul>
+
+<h2 id="ids">Event ids unique to each place</h2>
+<p>Every event travels as a number. The first compile in a place picks a random number for each event, spread over the whole range, and Branch Studio keeps the list in the place (an attribute of ServerStorage, which players never get). Every build and everyone in Team Create uses the same numbers; a new event takes a free one.</p>
+<ul>
+  <li><strong>Another game's packets do not fit.</strong> A packet or script made for another Branch game, or for old ids, carries numbers this place never uses, so the server sees it as forged.</li>
+  <li><strong>New ids</strong> (Settings &rsaquo; Network) gives every event a new number at once. Use it when a cheat that sends raw packets shows up, then publish: the cheat stops fitting.</li>
+  <li><strong>Nothing to do in your code:</strong> ids never appear in it, and they cost nothing at run time.</li>
+</ul>
+
+<h2 id="kick">Forged packets and kicks</h2>
+<p>Some packets no Branch client can produce: wrong remote arguments, an empty packet, an unknown event, lengths past the end of the buffer. They are forged, and after <b>Kick after forged packets</b> of them (Branch Studio, Settings › Network, default 3) the player is kicked. A value out of its range, a missing Instance, a rate limit or a broken guard can also come from a bug in the game or from lag, so those are only reported. <code>OnReject</code>'s third argument says which it was.</p>
+
+<h2 id="anticheat">Anticheat and strict mode</h2>
+<p>On top of these rules, every client signs a heartbeat and checks its own network module, and strict mode can tag every packet. Your own checks join the same pipeline. All of it is on its own page: <a href="../anticheat.html">Anticheat</a>.</p>
 
 <h2>Use</h2>
 <pre><code>-- server

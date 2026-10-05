@@ -39,10 +39,11 @@ local function instrument(source: string, label: string): string
 	assert(calls > 0, label .. ": no remote sends found")
 
 	-- Heartbeat flush -> timed
-	-- (Branch's Studio-only profiler also runs on Heartbeat: not part of the flush)
+	-- (the Studio-only profiler and the anticheat's sharing also run on Heartbeat:
+	-- not part of the flush)
 	local beats = 0
 	source = string.gsub(source, "RunService%.Heartbeat:Connect%(([%w_]+)%)", function(handler: string)
-		if handler == "publish" then
+		if handler == "publish" or handler == "shareTick" then
 			return nil
 		end
 		beats += 1

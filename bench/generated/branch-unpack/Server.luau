@@ -8,6 +8,7 @@
 -- 6 events, 4 to server, 2 to client
 -- DO NOT EDIT: this module is rewritten on every network compile.
 -- Declare events in your services: Service.Network = { Event = { From = ..., Data = ... } }
+local Vector3_new = Vector3.new
 local bit32_btest = bit32.btest
 local bit32_lshift = bit32.lshift
 local buffer_copy = buffer.copy
@@ -20,8 +21,11 @@ local buffer_readu8 = buffer.readu8
 local buffer_writef32 = buffer.writef32
 local buffer_writeu16 = buffer.writeu16
 local buffer_writeu8 = buffer.writeu8
+local math_floor = math.floor
 local math_max = math.max
 local math_min = math.min
+local math_random = math.random
+local math_sqrt = math.sqrt
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -37,14 +41,15 @@ local CHECK = false
 local IS_STUDIO = RunService:IsStudio()
 local BUDGET = 820
 local MAX_PACKET = 65536
+local KICK_AFTER = 0 -- forged packets before a kick (0 = never)
 local QUEUE_LIMIT = 256
 local INF = math.huge
 local NAMES: { string } = {}
 local RESPONSE_ID: { number } = {}
-local READ_R: { any } = {}
-local READ_U: { any } = {}
-local RUN_R: { any } = {} -- run readers: a run of one event in one call
-local RUN_U: { any } = {}
+local READ_R: { any } = table.create(4)
+local READ_U: { any } = table.create(4)
+local RUN_R: { any } = table.create(4) -- run readers: a run of one event in one call
+local RUN_U: { any } = table.create(4)
 local HANDLERS: { any } = {}
 local RESPOND: { any } = {}
 local DSEND: { any } = {} -- Delta: per event, per player, what they hold
@@ -57,110 +62,121 @@ local LPS: { any } = {}
 local LAA: { any } = {}
 local LAS: { any } = {}
 local LPK: { any } = {} -- Latest with Key: per player, the keys waiting for the flush
-local GATE: { any } = {} -- Hz / Lod: seconds between sends, per ring
+local GATE: { any } = {} -- Hz / Lod: seconds between sends, per ring (and per key group)
 local GDUE: { any } = {}
+local GPHASE: { any } = {} -- where on its time grid each gate opens
 local LOD: { any } = {} -- Lod: ring distances
 
 -- Studio-only traffic counters for Branch (live). The BranchProfile attribute
 -- on Branch.Network switches them while you Play (false = off: nothing is
 -- counted or published). Never on in a live server.
-local PROFILE_ALLOWED = false -- built without the Studio profiler
+-- Only what readers and writers touch stays at the top (a module has room for
+-- 200 locals); the rest lives in the block below.
 local PROFILE = false
-local PROOT: any = Root
 local SNAMES: { string } = {}
-local PS_COUNT: { [number]: number } = {}
-local PS_BYTES: { [number]: number } = {}
-local PR_COUNT: { [number]: number } = {}
-local PR_BYTES: { [number]: number } = {}
-local PNUM: { [string]: { number } } = {}
+local psent: (id: number, bytes: number) -> ()
+local precv: (id: number, bytes: number) -> ()
+local pnum: (id: number, field: string, v: any, declared: string, names: { string }?) -> ()
+do
+	local PROFILE_ALLOWED = false -- built without the Studio profiler
+	local PROOT: any = Root
+	local PS_COUNT: { [number]: number } = {}
+	local PS_BYTES: { [number]: number } = {}
+	local PR_COUNT: { [number]: number } = {}
+	local PR_BYTES: { [number]: number } = {}
+	local PNUM: { [string]: { number } } = {}
 
-local function psent(id: number, bytes: number)
-	PS_COUNT[id] = (PS_COUNT[id] or 0) + 1
-	PS_BYTES[id] = (PS_BYTES[id] or 0) + bytes
-end
+	function psent(id: number, bytes: number)
+		PS_COUNT[id] = (PS_COUNT[id] or 0) + 1
+		PS_BYTES[id] = (PS_BYTES[id] or 0) + bytes
+	end
 
-local function precv(id: number, bytes: number)
-	PR_COUNT[id] = (PR_COUNT[id] or 0) + 1
-	PR_BYTES[id] = (PR_BYTES[id] or 0) + bytes
-end
+	function precv(id: number, bytes: number)
+		PR_COUNT[id] = (PR_COUNT[id] or 0) + 1
+		PR_BYTES[id] = (PR_BYTES[id] or 0) + bytes
+	end
 
-local function pnum(id: number, field: string, v: any, declared: string, names: { string }?)
-	if type(v) ~= "number" or v ~= v then
-		return
-	end
-	local k = ((names or SNAMES)[id] or "?") .. "|" .. field
-	local s = PNUM[k]
-	if not s then
-		PNUM[k] = { v, v, if v % 1 == 0 then 1 else 0, declared :: any }
-		return
-	end
-	if v < s[1] then s[1] = v end
-	if v > s[2] then s[2] = v end
-	if v % 1 ~= 0 then s[3] = 0 end
-end
-
-local lastPublish = -1
-local function publish()
-	local now = os.clock()
-	if now - lastPublish < 1 then
-		return
-	end
-	lastPublish = now
-	local out = {}
-	for id, n in PS_COUNT do
-		out[#out + 1] = `S|{SNAMES[id] or "?"}|{n}|{PS_BYTES[id]}`
-	end
-	for id, n in PR_COUNT do
-		out[#out + 1] = `R|{NAMES[id] or "?"}|{n}|{PR_BYTES[id]}`
-	end
-	for k, s in PNUM do
-		out[#out + 1] = `N|{k}|{s[1]}|{s[2]}|{s[3]}|{s[4]}`
-	end
-	PROOT:SetAttribute("BranchNetStatsServer", table.concat(out, "\n"))
-end
-
-local publishing: RBXScriptConnection? = nil
-local function setProfile(on: boolean)
-	if on == PROFILE then
-		return
-	end
-	PROFILE = on
-	if on then
-		publishing = RunService.Heartbeat:Connect(publish)
-	else
-		if publishing then
-			publishing:Disconnect()
-			publishing = nil
+	function pnum(id: number, field: string, v: any, declared: string, names: { string }?)
+		if type(v) ~= "number" or v ~= v then
+			return
 		end
-		table.clear(PS_COUNT)
-		table.clear(PS_BYTES)
-		table.clear(PR_COUNT)
-		table.clear(PR_BYTES)
-		table.clear(PNUM)
-		lastPublish = -1
-		PROOT:SetAttribute("BranchNetStatsServer", nil)
+		local k = ((names or SNAMES)[id] or "?") .. "|" .. field
+		local s = PNUM[k]
+		if not s then
+			PNUM[k] = { v, v, if v % 1 == 0 then 1 else 0, declared :: any }
+			return
+		end
+		if v < s[1] then s[1] = v end
+		if v > s[2] then s[2] = v end
+		if v % 1 ~= 0 then s[3] = 0 end
 	end
-end
 
-if PROFILE_ALLOWED and PROOT.SetAttribute ~= nil then
-	setProfile(PROOT:GetAttribute("BranchProfile") ~= false)
-	PROOT:GetAttributeChangedSignal("BranchProfile"):Connect(function()
+	local lastPublish = -1
+	local function publish()
+		local now = os.clock()
+		if now - lastPublish < 1 then
+			return
+		end
+		lastPublish = now
+		local out = {}
+		for id, n in PS_COUNT do
+			out[#out + 1] = `S|{SNAMES[id] or "?"}|{n}|{PS_BYTES[id]}`
+		end
+		for id, n in PR_COUNT do
+			out[#out + 1] = `R|{NAMES[id] or "?"}|{n}|{PR_BYTES[id]}`
+		end
+		for k, s in PNUM do
+			out[#out + 1] = `N|{k}|{s[1]}|{s[2]}|{s[3]}|{s[4]}`
+		end
+		PROOT:SetAttribute("BranchNetStatsServer", table.concat(out, "\n"))
+	end
+
+	local publishing: RBXScriptConnection? = nil
+	local function setProfile(on: boolean)
+		if on == PROFILE then
+			return
+		end
+		PROFILE = on
+		if on then
+			publishing = RunService.Heartbeat:Connect(publish)
+		else
+			if publishing then
+				publishing:Disconnect()
+				publishing = nil
+			end
+			table.clear(PS_COUNT)
+			table.clear(PS_BYTES)
+			table.clear(PR_COUNT)
+			table.clear(PR_BYTES)
+			table.clear(PNUM)
+			lastPublish = -1
+			PROOT:SetAttribute("BranchNetStatsServer", nil)
+		end
+	end
+
+	if PROFILE_ALLOWED and PROOT.SetAttribute ~= nil then
 		setProfile(PROOT:GetAttribute("BranchProfile") ~= false)
-	end)
+		PROOT:GetAttributeChangedSignal("BranchProfile"):Connect(function()
+			setProfile(PROOT:GetAttribute("BranchProfile") ~= false)
+		end)
+	end
 end
 
 -- FireNear: players whose character's PrimaryPart is within `radius`.
-local nearList: { Player } = {}
-local function near(position: Vector3, radius: number): { Player }
-	table.clear(nearList)
-	for _, player in Players:GetPlayers() do
-		local character = (player :: any).Character
-		local root = character and character.PrimaryPart
-		if root and (root.Position - position).Magnitude <= radius then
-			nearList[#nearList + 1] = player
+local near: (position: Vector3, radius: number) -> { Player }
+do
+	local nearList: { Player } = {}
+	function near(position: Vector3, radius: number): { Player }
+		table.clear(nearList)
+		for _, player in Players:GetPlayers() do
+			local character = (player :: any).Character
+			local root = character and character.PrimaryPart
+			if root and (root.Position - position).Magnitude <= radius then
+				nearList[#nearList + 1] = player
+			end
 		end
+		return nearList
 	end
-	return nearList
 end
 
 local function rvar(b: buffer, c: number, first: number): (number, number)
@@ -827,18 +843,827 @@ RunService.Heartbeat:Connect(flush)
 
 local EMPTY = table.freeze({})
 local ERR = "malformed packet"
-local rejectHandlers: { (Player, string) -> () } = {}
+local BAD = "bad value"
+local rejectHandlers: { (Player, string, boolean) -> () } = {}
+-- Anticheat.Restrict / a level: every refused request counts as forged, rate limits refill slower
+local RESTRICTED: { [Player]: boolean } = {}
 
-local function rejected(player: Player, reason: any)
-	local text = tostring(reason)
-	if IS_STUDIO then
-		warn(`Branch.Network rejected a packet from {player.Name}: {text}`)
-	end
-	for _, handler in rejectHandlers do
-		task.spawn(handler, player, text)
+-- Strikes: a packet no Branch client can produce (wrong remote arguments, an
+-- empty packet, an unknown event, a broken structure) is forged, and after
+-- KICK_AFTER of them the player is kicked (0 = never). A bad value, a rate
+-- limit or a guard can also come from the game's own bug or from lag, so those
+-- are only reported (OnReject's third argument tells them apart).
+local rejected: (player: Player, reason: any, forged: boolean) -> ()
+do
+	local STRIKES: { [Player]: number } = {}
+	Players.PlayerRemoving:Connect(function(p: Player)
+		STRIKES[p] = nil
+	end)
+
+	function rejected(player: Player, reason: any, forged: boolean)
+		forged = forged or RESTRICTED[player] == true
+		local text = tostring(reason)
+		if IS_STUDIO then
+			warn(`Branch.Network rejected a packet from {player.Name}: {text}{if forged then " (forged)" else ""}`)
+		end
+		for _, handler in rejectHandlers do
+			task.spawn(handler, player, text, forged)
+		end
+		if forged and KICK_AFTER > 0 then
+			local strikes = (STRIKES[player] or 0) + 1
+			STRIKES[player] = strikes
+			if strikes == KICK_AFTER then
+				player:Kick("The server refused data from your client.")
+			end
+		end
 	end
 end
 
+-- Anticheat findings: Branch's own checks (heartbeat, silence, raw, tamper,
+-- strict), the ready-made ones a game turns on (speed, teleport, fly, noclip),
+-- the game's client checks (Anticheat.Check / Report) and its server ones
+-- (Anticheat.Flag). Every finding:
+--   * is kept in the player's record (score, count per check, the last 50),
+--     which admin panels read (GetFlagged, GetRecord, OnChanged);
+--   * does what SetAction says for its check: "kick" (from the `after`-th
+--     finding on), "report" or "ignore";
+--   * adds the check's weight to the player's score, and each level the score
+--     reaches (SetLevel) acts once: "restrict", "kick" or a function.
+-- Kicks never happen in Studio, nor with KICK_AFTER = 0. OnFlag and OnReject
+-- ("anticheat: ...") hear every finding that is not ignored.
+-- (a function, not a do block: its many locals do not count against the
+-- module's 200)
+local flag: (p: Player, check: string, detail: string?, once: boolean?) -> ()
+local anticheatApi: any = (function()
+	-- Basic, the default: a finding of a check that kicks kicks; no levels.
+	local BASIC_ACTIONS = { strict = "report" }
+	local BASIC_AFTER = { speed = 4, teleport = 4, fly = 4, noclip = 4 }
+	local WEIGHTS: { [string]: number } = {
+		heartbeat = 10, silence = 10, raw = 10, tamper = 10, strict = 1,
+		speed = 2, teleport = 3, fly = 3, noclip = 2,
+	}
+	local ACTIONS: { [string]: string } = table.clone(BASIC_ACTIONS)
+	local AFTER: { [string]: number } = table.clone(BASIC_AFTER)
+	local DEFAULT_ACTION = "kick" -- of a check SetAction never named
+	local LEVELS: { { at: number, action: any } } = {} -- by score, low to high
+	local DECAY = 0 -- score points a minute
+	local kickMessage = "The server refused data from your client."
+	local flagHandlers: { (Player, string, string?, number) -> () } = {}
+	local changeHandlers: { (Player, any) -> () } = {}
+	-- per player: { score, scoredAt, levels reached, checks = { [check] = { count, detail, at } }, history }
+	local RECORDS: { [Player]: any } = {}
+	local KICKED: { [Player]: boolean } = {}
+
+	local function decayed(record: any, now: number)
+		if DECAY > 0 then
+			record.score = math_max(0, record.score - DECAY * (now - record.scoredAt) / 60)
+		end
+		record.scoredAt = now
+	end
+
+	-- What panels get: a copy, so nothing they do reaches the anticheat.
+	local function snapshot(p: Player, record: any): any
+		decayed(record, os.clock())
+		local checks = {}
+		for name, entry in record.checks do
+			checks[name] = table.freeze({ count = entry.count, detail = entry.detail, at = entry.at })
+		end
+		return table.freeze({
+			player = p,
+			score = record.score,
+			restricted = RESTRICTED[p] == true,
+			checks = table.freeze(checks),
+			history = table.freeze(table.clone(record.history)),
+		})
+	end
+
+	local shareChanged: ((p: Player, record: any?) -> ())? = nil -- set while sharing across servers
+
+	local function changed(p: Player, record: any?)
+		if changeHandlers[1] then
+			local view = if record then snapshot(p, record) else nil
+			for _, handler in changeHandlers do
+				task.spawn(handler, p, view)
+			end
+		end
+		if shareChanged then
+			shareChanged(p, record)
+		end
+	end
+
+	local function kick(p: Player)
+		if KICK_AFTER > 0 and not IS_STUDIO and not KICKED[p] then
+			KICKED[p] = true
+			p:Kick(kickMessage)
+		end
+	end
+
+	Players.PlayerRemoving:Connect(function(p: Player)
+		KICKED[p] = nil
+		RESTRICTED[p] = nil
+		if RECORDS[p] then
+			RECORDS[p] = nil
+			changed(p, nil)
+		end
+	end)
+
+	-- once: Branch's own checks speak once per player and check
+	function flag(p: Player, check: string, detail: string?, once: boolean?)
+		local record = RECORDS[p]
+		if once and record and record.checks[check] then
+			return
+		end
+		local action = ACTIONS[check] or DEFAULT_ACTION
+		if action == "ignore" then
+			return
+		end
+		local now = os.clock()
+		if not record then
+			record = { score = 0, scoredAt = now, reached = 0, checks = {}, history = {} }
+			RECORDS[p] = record
+		end
+		local entry = record.checks[check]
+		if not entry then
+			entry = { count = 0, detail = nil, at = 0 }
+			record.checks[check] = entry
+		end
+		local at = os.time()
+		entry.count += 1
+		entry.detail = detail
+		entry.at = at
+		local history = record.history
+		if #history >= 50 then
+			table.remove(history, 1)
+		end
+		table.insert(history, table.freeze({ check = check, detail = detail, at = at }))
+		decayed(record, now)
+		record.score += WEIGHTS[check] or 1
+		local text = if detail then `{check}: {detail}` else check
+		local after = AFTER[check] or 1
+		local kicks = action == "kick" and entry.count >= after and KICK_AFTER > 0
+		if IS_STUDIO then
+			local note = if kicks then " (never kicked in Studio)" elseif action == "kick" and entry.count < after then ` ({entry.count} of {after} before a kick)` else ""
+			warn(`Branch anticheat: {p.Name}: {text}{note}`)
+		end
+		for _, handler in flagHandlers do
+			task.spawn(handler, p, check, detail, record.score)
+		end
+		for _, handler in rejectHandlers do
+			task.spawn(handler, p, "anticheat: " .. text, kicks)
+		end
+		-- the levels the score just reached, each once
+		for index = record.reached + 1, #LEVELS do
+			local level = LEVELS[index]
+			if record.score < level.at then
+				break
+			end
+			record.reached = index
+			local act = level.action
+			if act == "restrict" then
+				RESTRICTED[p] = true
+			elseif act == "kick" then
+				kicks = KICK_AFTER > 0
+			else
+				task.spawn(act, p, snapshot(p, record))
+			end
+		end
+		changed(p, record)
+		if kicks then
+			kick(p)
+		end
+	end
+
+	-- Ready-made checks (Anticheat.Use), off until a game turns one on. The
+	-- server samples every character twice a second, spread over the frames,
+	-- and judges what it sees: the player's own client moves the character,
+	-- so it can lie, but not in ways that look like walking.
+	local MOVE_DEFAULTS = {
+		speed = { max = 0, tolerance = 1.75 }, -- max 0: the Humanoid's WalkSpeed
+		teleport = { distance = 100 },
+		fly = { height = 16, time = 4 },
+		noclip = {},
+	}
+	local MOVE: { [string]: any } = {}
+	local MOVERS: { Player } = {}
+	local STATE: { [Player]: any } = {}
+	local PAUSED: { [Player]: number } = {}
+	Players.PlayerRemoving:Connect(function(p: Player)
+		PAUSED[p] = nil -- Pause works before Use too
+	end)
+	local INTERVAL = 0.5
+	local credit, cursor = 0, 0
+	local moving = false
+
+	local function one(x: number): string
+		return string.format("%.1f", x)
+	end
+
+	-- The state of a player's current character (a new character starts anew,
+	-- with 3 s before it is judged).
+	local function stateOf(p: Player, now: number): any
+		local character = (p :: any).Character
+		local s = STATE[p]
+		if s and s.character == character then
+			return s
+		end
+		if s and s.moved then
+			s.moved:Disconnect()
+		end
+		s = { character = character, quiet = now + 3, fast = 0, air = 0, clips = 0, clipAt = 0, step = 0, stepTime = 0, at = now }
+		if character then
+			s.root = character.PrimaryPart or character:FindFirstChild("HumanoidRootPart")
+			s.humanoid = character:FindFirstChildOfClass("Humanoid")
+			local params = RaycastParams.new()
+			params.FilterType = Enum.RaycastFilterType.Exclude
+			params.FilterDescendantsInstances = { character }
+			params.RespectCanCollide = true
+			s.params = params
+			if s.root then
+				-- a script of the game moved the character (a teleport, a spawn
+				-- point): not the player's doing (physics does not fire this)
+				s.moved = s.root:GetPropertyChangedSignal("CFrame"):Connect(function()
+					s.quiet = math_max(s.quiet, os.clock() + 1)
+				end)
+			end
+		end
+		STATE[p] = s
+		return s
+	end
+
+	local function sample(p: Player, now: number)
+		local s = stateOf(p, now)
+		local root, humanoid = s.root, s.humanoid
+		if not root or not humanoid or root.Parent == nil then
+			return
+		end
+		local pos = root.Position
+		local last, dt = s.pos, now - s.at
+		s.pos, s.at = pos, now
+		if
+			last == nil
+			or dt <= 0
+			or now < s.quiet
+			or now < (PAUSED[p] or 0)
+			or humanoid.Health <= 0
+			or humanoid.SeatPart ~= nil
+			or humanoid.PlatformStand
+			or root.Anchored
+		then
+			-- not walking on its own: seated, on a platform, dead, held, just moved by the game
+			s.fast, s.air, s.step, s.stepTime = 0, 0, 0, 0
+			return
+		end
+		local d = pos - last
+		local flat = math_sqrt(d.X * d.X + d.Z * d.Z)
+		-- the server may see a jump spread over two samples: judge the pair too
+		local pair, pairTime = flat + s.step, dt + s.stepTime
+		s.step, s.stepTime = flat, dt
+		local speed, teleport = MOVE.speed, MOVE.teleport
+		if speed or teleport then
+			local allowed = (if speed and speed.max > 0 then speed.max else humanoid.WalkSpeed) * (if speed then speed.tolerance else 1.75) + 4
+			if teleport and (pair > math_max(teleport.distance, allowed * pairTime * 3) or d.Y > teleport.distance) then
+				flag(p, "teleport", `{math_floor(math_max(pair, d.Y))} studs in {one(pairTime)} s`)
+				s.fast, s.step, s.stepTime = 0, 0, 0
+			elseif speed and flat / dt > allowed then
+				-- three samples in a row: a lag burst is one or two
+				s.fast += 1
+				if s.fast >= 3 then
+					flag(p, "speed", `{math_floor(flat / dt)} studs/s, {math_floor(allowed)} allowed`)
+					s.fast = 0
+				end
+			else
+				s.fast = 0
+			end
+		end
+		local fly = MOVE.fly
+		if fly then
+			-- in the air without falling: no ground under it and not coming down
+			if d.Y / dt > -8 and workspace:Raycast(pos, Vector3_new(0, -fly.height, 0), s.params) == nil then
+				s.air += dt
+				if s.air >= fly.time then
+					flag(p, "fly", `{one(s.air)} s in the air`)
+					s.air = 0
+				end
+			else
+				s.air = 0
+			end
+		end
+		if MOVE.noclip and flat > 0.5 then
+			-- the path since the last sample goes through something solid; three
+			-- times in 10 s is a finding (once or twice can be doors that just closed)
+			local hit = workspace:Raycast(last, d, s.params)
+			if hit then
+				s.clips = if now - s.clipAt > 10 then 1 else s.clips + 1
+				s.clipAt = now
+				if s.clips >= 3 then
+					flag(p, "noclip", `through {hit.Instance.Name}`)
+					s.clips = 0
+				end
+			end
+		end
+	end
+
+	local function startMoving()
+		if moving then
+			return
+		end
+		moving = true
+		for _, p in Players:GetPlayers() do
+			table.insert(MOVERS, p)
+		end
+		Players.PlayerAdded:Connect(function(p: Player)
+			table.insert(MOVERS, p)
+		end)
+		Players.PlayerRemoving:Connect(function(p: Player)
+			local index = table.find(MOVERS, p)
+			if index then
+				MOVERS[index] = MOVERS[#MOVERS]
+				MOVERS[#MOVERS] = nil
+			end
+			local s = STATE[p]
+			if s and s.moved then
+				s.moved:Disconnect()
+			end
+			STATE[p] = nil
+		end)
+		RunService.Heartbeat:Connect(function(dt: number)
+			local count = #MOVERS
+			if count == 0 then
+				return
+			end
+			-- each player twice a second, a few per frame
+			credit += count * dt / INTERVAL
+			local now = os.clock()
+			for _ = 1, math_min(math_floor(credit), count) do
+				cursor = cursor % count + 1
+				sample(MOVERS[cursor], now)
+			end
+			credit -= math_floor(credit)
+		end)
+	end
+
+	-- Across servers (ShareAcrossServers). Every server publishes what changed in
+	-- its players' records on one MessagingService topic, a few seconds' worth at
+	-- a time and well under 1 KB a message, and keeps what the others publish.
+	-- Wire: { j = JobId, p = PlaceId, e = { { userId, name, score, restricted,
+	-- "check=count,..." } or { userId } (gone) }, h = true (a new server: "send
+	-- me everything") }. An entry is dropped when its server says the player is
+	-- gone (left, pardoned, server closing) or stops refreshing it (crashed).
+	local TOPIC = "BranchAnticheat"
+	local SHARE_EVERY = 3 -- seconds between publishes of what changed
+	local REFRESH_EVERY = 60 -- everything again, for servers that came later
+	local FORGET_AFTER = 150 -- an entry nobody refreshed for this long
+	local JOB = if game.JobId ~= "" then game.JobId else "studio"
+	local DIRTY: { [Player]: boolean } = {} -- emptied on every publish
+	local GLOBAL: { [string]: any } = {} -- "job:userId" -> other servers' entries
+	local globalHandlers: { (number, any) -> () } = {}
+	local subscription: any = nil
+	local sharing, shareAt, refreshAt, closing = false, 0, 0, false
+
+	-- what an entry looks like to the game (frozen)
+	local function entryOf(userId: number, name: string, score: number, restricted: boolean, checks: { [string]: number }, server: string, place: number, here: boolean): any
+		return table.freeze({
+			userId = userId,
+			name = name,
+			score = score,
+			restricted = restricted,
+			checks = table.freeze(checks),
+			server = server,
+			placeId = place,
+			here = here,
+		})
+	end
+
+	local function localEntry(p: Player, record: any): any
+		local checks = {}
+		for name, entry in record.checks do
+			checks[name] = entry.count
+		end
+		decayed(record, os.clock())
+		return entryOf((p :: any).UserId, p.Name, record.score, RESTRICTED[p] == true, checks, JOB, game.PlaceId, true)
+	end
+
+	local function tellGlobal(userId: number, entry: any?)
+		for _, handler in globalHandlers do
+			task.spawn(handler, userId, entry)
+		end
+	end
+
+	-- one player on the wire: { userId } when gone
+	local function wireOf(p: Player): { any }
+		local record = RECORDS[p]
+		if not record or closing then
+			return { (p :: any).UserId }
+		end
+		decayed(record, os.clock())
+		local parts, count = {}, 0
+		for name, entry in record.checks do
+			count += 1
+			if count > 12 then
+				break
+			end
+			parts[count] = `{string.sub(name, 1, 24)}={entry.count}`
+		end
+		return { (p :: any).UserId, string.sub(p.Name, 1, 20), math_floor(record.score * 10 + 0.5) / 10, if RESTRICTED[p] then 1 else 0, table.concat(parts, ",") }
+	end
+
+	local function publish(data: any)
+		task.spawn(function()
+			local ok, problem = pcall(function()
+				game:GetService("MessagingService"):PublishAsync(TOPIC, data)
+			end)
+			if not ok and IS_STUDIO then
+				warn(`Branch anticheat: sharing across servers failed: {problem}`)
+			end
+		end)
+	end
+
+	-- publishes these players, a message per ~800 bytes
+	local function share(players: { Player })
+		local batch, size = {}, 0
+		for _, p in players do
+			local wire = wireOf(p)
+			local bytes = 24 + (if wire[2] then #wire[2] + #wire[5] + 24 else 0)
+			if size + bytes > 800 and batch[1] then
+				publish({ j = JOB, p = game.PlaceId, e = batch })
+				batch, size = {}, 0
+			end
+			table.insert(batch, wire)
+			size += bytes
+		end
+		if batch[1] then
+			publish({ j = JOB, p = game.PlaceId, e = batch })
+		end
+	end
+
+	local function received(message: any)
+		local data = type(message) == "table" and message.Data
+		if type(data) ~= "table" or type(data.j) ~= "string" or data.j == JOB then
+			return
+		end
+		if data.h then
+			-- a server that just started: everything soon, not every server at once
+			local at = os.clock() + math_random() * 2
+			refreshAt = math_min(refreshAt, at)
+			shareAt = math_min(shareAt, at)
+		end
+		if type(data.e) ~= "table" then
+			return
+		end
+		local now = os.clock()
+		for _, wire in data.e do
+			local userId = type(wire) == "table" and wire[1]
+			if type(userId) ~= "number" then
+				continue
+			end
+			local key = `{data.j}:{userId}`
+			if wire[2] == nil then
+				if GLOBAL[key] then
+					GLOBAL[key] = nil
+					tellGlobal(userId, nil)
+				end
+			elseif type(wire[2]) == "string" and type(wire[3]) == "number" and type(wire[5]) == "string" then
+				local checks = {}
+				for name, count in string.gmatch(wire[5], "([^,=]+)=(%d+)") do
+					checks[name] = tonumber(count)
+				end
+				local entry = entryOf(userId, wire[2], wire[3], wire[4] == 1, checks, data.j, if type(data.p) == "number" then data.p else 0, false)
+				GLOBAL[key] = { entry = entry, seen = now }
+				tellGlobal(userId, entry)
+			end
+		end
+	end
+
+	local function shareTick()
+		local now = os.clock()
+		if now >= refreshAt then
+			refreshAt = now + REFRESH_EVERY
+			for p in RECORDS do
+				DIRTY[p] = true
+			end
+			for key, held in GLOBAL do
+				if now - held.seen > FORGET_AFTER then
+					GLOBAL[key] = nil
+					tellGlobal(held.entry.userId, nil)
+				end
+			end
+		end
+		if now >= shareAt and next(DIRTY) then
+			shareAt = now + SHARE_EVERY
+			local players = {}
+			for p in DIRTY do
+				table.insert(players, p)
+			end
+			table.clear(DIRTY)
+			share(players)
+		end
+	end
+
+	local ticking: RBXScriptConnection? = nil
+	local function startSharing()
+		sharing, closing = true, false
+		shareAt, refreshAt = 0, os.clock() + REFRESH_EVERY
+		shareChanged = function(p: Player, record: any?)
+			DIRTY[p] = true
+			if globalHandlers[1] then
+				tellGlobal((p :: any).UserId, if record then localEntry(p, record) else nil)
+			end
+		end
+		for p in RECORDS do
+			DIRTY[p] = true
+		end
+		ticking = RunService.Heartbeat:Connect(shareTick)
+		task.spawn(function()
+			local ok, connection = pcall(function()
+				return game:GetService("MessagingService"):SubscribeAsync(TOPIC, received)
+			end)
+			if not ok then
+				if IS_STUDIO then
+					warn(`Branch anticheat: sharing across servers needs a published place: {connection}`)
+				end
+				return
+			end
+			if sharing then
+				subscription = connection
+				publish({ j = JOB, p = game.PlaceId, h = true })
+			else
+				connection:Disconnect()
+			end
+		end)
+	end
+
+	local function stopSharing()
+		sharing = false
+		shareChanged = nil
+		if ticking then
+			ticking:Disconnect()
+			ticking = nil
+		end
+		if subscription then
+			subscription:Disconnect()
+			subscription = nil
+		end
+		-- the others forget this server's players
+		closing = true
+		local players = {}
+		for p in RECORDS do
+			table.insert(players, p)
+		end
+		share(players)
+		closing = false
+		table.clear(DIRTY)
+		for key, held in GLOBAL do
+			GLOBAL[key] = nil
+			tellGlobal(held.entry.userId, nil)
+		end
+	end
+
+	local closeBound = false
+
+	local function clientOnly()
+		error("Branch.Network.Anticheat.Check and Report are only available on the client", 2)
+	end
+
+	local function needsPlayer(player: any, name: string)
+		if player == nil then
+			error(`Branch.Network.Anticheat.{name}(player: Player, ...)`, 3)
+		end
+	end
+
+	return table.freeze({
+		-- every finding (not ignored): (player, check, detail, the player's score)
+		OnFlag = function(handler: (player: Player, check: string, detail: string?, score: number) -> ()): () -> ()
+			if type(handler) ~= "function" then
+				error("Branch.Network.Anticheat.OnFlag(handler: (player, check, detail, score) -> ())", 2)
+			end
+			table.insert(flagHandlers, handler)
+			return function()
+				local index = table.find(flagHandlers, handler)
+				if index then
+					table.remove(flagHandlers, index)
+				end
+			end
+		end,
+		-- a player's record changed: (player, record), or (player, nil) when it is gone (pardoned, left)
+		OnChanged = function(handler: (player: Player, record: any?) -> ()): () -> ()
+			if type(handler) ~= "function" then
+				error("Branch.Network.Anticheat.OnChanged(handler: (player, record?) -> ())", 2)
+			end
+			table.insert(changeHandlers, handler)
+			return function()
+				local index = table.find(changeHandlers, handler)
+				if index then
+					table.remove(changeHandlers, index)
+				end
+			end
+		end,
+		Flag = function(player: Player, check: string, detail: string?)
+			if player == nil or type(check) ~= "string" or check == "" then
+				error("Branch.Network.Anticheat.Flag(player: Player, check: string, detail: string?)", 2)
+			end
+			flag(player, check, if detail == nil then nil else tostring(detail))
+		end,
+		-- players in the server with a record, highest score first
+		GetFlagged = function(): { any }
+			local list = {}
+			for p, record in RECORDS do
+				table.insert(list, snapshot(p, record))
+			end
+			table.sort(list, function(a, b)
+				return a.score > b.score
+			end)
+			return list
+		end,
+		GetRecord = function(player: Player): any?
+			needsPlayer(player, "GetRecord")
+			local record = RECORDS[player]
+			return if record then snapshot(player, record) else nil
+		end,
+		-- forgives one check (its findings and their score) or everything (check nil)
+		Pardon = function(player: Player, check: string?)
+			needsPlayer(player, "Pardon")
+			local record = RECORDS[player]
+			if not record then
+				return
+			end
+			local entry = if check ~= nil then record.checks[check] else nil
+			if entry then
+				decayed(record, os.clock())
+				record.score = math_max(0, record.score - entry.count * (WEIGHTS[check :: string] or 1))
+				record.checks[check :: string] = nil
+				record.reached = 0
+				for index, level in LEVELS do
+					if record.score >= level.at then
+						record.reached = index
+					end
+				end
+			end
+			if check == nil or next(record.checks) == nil then
+				RECORDS[player] = nil
+				RESTRICTED[player] = nil
+				changed(player, nil)
+			elseif entry then
+				changed(player, record)
+			end
+		end,
+		-- restricted: every request of theirs the server refuses counts as forged,
+		-- and their rate limits refill at a quarter of the speed
+		Restrict = function(player: Player, on: boolean?)
+			needsPlayer(player, "Restrict")
+			RESTRICTED[player] = if on == false then nil else true
+			local record = RECORDS[player]
+			if record then
+				changed(player, record)
+			end
+		end,
+		IsRestricted = function(player: Player): boolean
+			return RESTRICTED[player] == true
+		end,
+		SetAction = function(check: string, action: "kick" | "report" | "ignore", after: number?)
+			if
+				type(check) ~= "string"
+				or (action ~= "kick" and action ~= "report" and action ~= "ignore")
+				or (after ~= nil and (type(after) ~= "number" or after < 1 or after % 1 ~= 0))
+			then
+				error('Branch.Network.Anticheat.SetAction(check: string, action: "kick" | "report" | "ignore", after: number? (kick from the n-th finding))', 2)
+			end
+			ACTIONS[check] = action
+			AFTER[check] = after
+		end,
+		SetWeight = function(check: string, weight: number)
+			if type(check) ~= "string" or type(weight) ~= "number" or weight < 0 then
+				error("Branch.Network.Anticheat.SetWeight(check: string, weight: number (0 or more))", 2)
+			end
+			WEIGHTS[check] = weight
+		end,
+		-- at a score of `at`: "restrict", "kick" or your function (player, record); nil removes the level
+		SetLevel = function(at: number, action: any)
+			if type(at) ~= "number" or at <= 0 or (action ~= nil and action ~= "restrict" and action ~= "kick" and type(action) ~= "function") then
+				error('Branch.Network.Anticheat.SetLevel(at: number, action: "restrict" | "kick" | (player, record) -> () | nil)', 2)
+			end
+			for index, level in LEVELS do
+				if level.at == at then
+					table.remove(LEVELS, index)
+					break
+				end
+			end
+			if action ~= nil then
+				table.insert(LEVELS, { at = at, action = action })
+				table.sort(LEVELS, function(a, b)
+					return a.at < b.at
+				end)
+			end
+		end,
+		-- the score goes down by this many points a minute (0: never)
+		SetDecay = function(perMinute: number)
+			if type(perMinute) ~= "number" or perMinute < 0 then
+				error("Branch.Network.Anticheat.SetDecay(perMinute: number (0 or more))", 2)
+			end
+			DECAY = perMinute
+		end,
+		-- "Basic" (the default): checks act on their own. "Advanced": checks only
+		-- report and the score decides (restrict at 5, kick at 10, 1 point a
+		-- minute forgotten). Later SetAction / SetLevel / SetDecay calls change it.
+		Preset = function(name: "Basic" | "Advanced")
+			if name == "Basic" then
+				ACTIONS, AFTER, DEFAULT_ACTION, LEVELS, DECAY = table.clone(BASIC_ACTIONS), table.clone(BASIC_AFTER), "kick", {}, 0
+			elseif name == "Advanced" then
+				ACTIONS, AFTER, DEFAULT_ACTION, DECAY = {}, {}, "report", 1
+				LEVELS = { { at = 5, action = "restrict" }, { at = 10, action = "kick" } }
+			else
+				error('Branch.Network.Anticheat.Preset(name: "Basic" | "Advanced")', 2)
+			end
+		end,
+		SetKickMessage = function(message: string)
+			if type(message) ~= "string" then
+				error("Branch.Network.Anticheat.SetKickMessage(message: string)", 2)
+			end
+			kickMessage = message
+		end,
+		-- a ready-made check: "speed", "teleport", "fly", "noclip"; options change
+		-- its numbers; false turns it off again
+		Use = function(name: string, options: any)
+			local defaults = MOVE_DEFAULTS[name]
+			if not defaults or (options ~= nil and options ~= false and type(options) ~= "table") then
+				error('Branch.Network.Anticheat.Use(name: "speed" | "teleport" | "fly" | "noclip", options: {}? | false)', 2)
+			end
+			if options == false then
+				MOVE[name] = nil
+				return
+			end
+			local merged = table.clone(defaults)
+			for key, value in options or {} do
+				if type(defaults[key]) ~= "number" or type(value) ~= "number" or value < 0 then
+					error(`Branch.Network.Anticheat.Use("{name}"): unknown or bad option {key}`, 2)
+				end
+				merged[key] = value
+			end
+			MOVE[name] = merged
+			startMoving()
+		end,
+		-- the game moves this player itself for a while (a dash, a launch pad, a
+		-- cutscene): the ready-made checks leave them alone until then
+		Pause = function(player: Player, seconds: number)
+			needsPlayer(player, "Pause")
+			if type(seconds) ~= "number" then
+				error("Branch.Network.Anticheat.Pause(player: Player, seconds: number)", 2)
+			end
+			PAUSED[player] = math_max(PAUSED[player] or 0, os.clock() + seconds)
+		end,
+		-- the flagged players of every server of the game (MessagingService): turn on
+		-- once on each server; false turns it off and the others forget this one
+		ShareAcrossServers = function(on: boolean?)
+			if on == false then
+				if sharing then
+					stopSharing()
+				end
+				return
+			end
+			if sharing then
+				return
+			end
+			if not closeBound then
+				closeBound = true
+				game:BindToClose(function()
+					if sharing then
+						stopSharing()
+						task.wait(0.5) -- let the last message go
+					end
+				end)
+			end
+			startSharing()
+		end,
+		-- this server's flagged players and the other servers', highest score first
+		GetFlaggedGlobal = function(): { any }
+			local list = {}
+			for p, record in RECORDS do
+				table.insert(list, localEntry(p, record))
+			end
+			for _, held in GLOBAL do
+				table.insert(list, held.entry)
+			end
+			table.sort(list, function(a, b)
+				return a.score > b.score
+			end)
+			return list
+		end,
+		-- an entry of any server changed: (userId, entry), or (userId, nil) when gone
+		OnGlobalChanged = function(handler: (userId: number, entry: any?) -> ()): () -> ()
+			if type(handler) ~= "function" then
+				error("Branch.Network.Anticheat.OnGlobalChanged(handler: (userId, entry?) -> ())", 2)
+			end
+			table.insert(globalHandlers, handler)
+			return function()
+				local index = table.find(globalHandlers, handler)
+				if index then
+					table.remove(globalHandlers, index)
+				end
+			end
+		end,
+		Check = clientOnly,
+		Report = clientOnly,
+	})
+end)()
 -- Errors inside process: a decoder fault blames the packet, a Sync listener
 -- fault is the game's own bug. `st` (one per packet) tells them apart:
 -- { c after the event being dispatched (-1 while decoding), its ri,
@@ -913,12 +1738,13 @@ end
 local function receiver(readers: { any }, runs: { any })
 	return function(player: Player, b: any, r: any)
 		if typeof(b) ~= "buffer" or (r ~= nil and type(r) ~= "table") then
-			rejected(player, "wrong argument types")
+			rejected(player, "wrong argument types", true)
 			return
 		end
 		local len = buffer_len(b)
 		if len == 0 or len > MAX_PACKET then
-			rejected(player, `packet size {len}`)
+			-- empty: forged; too big: the game may just send a lot
+			rejected(player, `packet size {len}`, len == 0)
 			return
 		end
 		local refs = r or EMPTY
@@ -931,7 +1757,7 @@ local function receiver(readers: { any }, runs: { any })
 			end
 			c, ri = st[1], st[2]
 			if c < 0 then
-				rejected(player, problem[1])
+				rejected(player, problem[1], problem[1] ~= BAD)
 				return
 			end
 			-- a Sync listener threw: report it like any script error, keep the rest
@@ -941,34 +1767,37 @@ local function receiver(readers: { any }, runs: { any })
 	end
 end
 
-local LS: { { (...any) -> () } } = {}
-local ON: { (...any) -> () } = {}
+local LS: { { (...any) -> () } } = table.create(4)
+local ON: { (...any) -> () } = table.create(4)
 local SPAWNS: { boolean } = {}
 local Q: { { { n: number, [number]: any } } } = {}
 local QWARNED: { boolean } = {}
 
 -- Reused coroutine runner (spawning a fresh thread per event is the costly part).
-local freeThread: thread? = nil
+local spawn: (fn: (...any) -> (), ...any) -> ()
+do
+	local freeThread: thread? = nil
 
-local function runHandler(fn: (...any) -> (), ...: any)
-	local thread = freeThread
-	freeThread = nil
-	fn(...)
-	freeThread = thread
-end
-
-local function runLoop()
-	while true do
-		runHandler(coroutine.yield())
+	local function runHandler(fn: (...any) -> (), ...: any)
+		local thread = freeThread
+		freeThread = nil
+		fn(...)
+		freeThread = thread
 	end
-end
 
-local function spawn(fn: (...any) -> (), ...: any)
-	if not freeThread then
-		freeThread = coroutine.create(runLoop)
-		coroutine.resume(freeThread :: thread)
+	local function runLoop()
+		while true do
+			runHandler(coroutine.yield())
+		end
 	end
-	task.spawn(freeThread :: thread, fn, ...)
+
+	function spawn(fn: (...any) -> (), ...: any)
+		if not freeThread then
+			freeThread = coroutine.create(runLoop)
+			coroutine.resume(freeThread :: thread)
+		end
+		task.spawn(freeThread :: thread, fn, ...)
+	end
 end
 
 -- Keeps an event for the first listener; false when the queue is full.
@@ -1080,7 +1909,7 @@ READ_R[1] = function(p: Player, b: buffer, c: number, r: { any }, ri: number, st
 	local n_2 = buffer_readu8(b, c)
 	c += 1
 	if n_2 >= 128 then n_2, c = rvar(b, c, n_2) end
-	if n_2 > 1000 then error(ERR, 0) end
+	if n_2 > 1000 then error(BAD, 0) end
 	if (n_2 + 7) // 8 > buffer_len(b) - c then error(ERR, 0) end
 	local arr_3 = table.create(n_2)
 	local j_6 = 0
@@ -1128,7 +1957,7 @@ RUN_R[1] = function(p: Player, b: buffer, c: number, r: { any }, ri: number, st:
 		local n_9 = buffer_readu8(b, c)
 		c += 1
 		if n_9 >= 128 then n_9, c = rvar(b, c, n_9) end
-		if n_9 > 1000 then error(ERR, 0) end
+		if n_9 > 1000 then error(BAD, 0) end
 		if (n_9 + 7) // 8 > buffer_len(b) - c then error(ERR, 0) end
 		local arr_10 = table.create(n_9)
 		local j_13 = 0
@@ -1183,7 +2012,7 @@ READ_R[2] = function(p: Player, b: buffer, c: number, r: { any }, ri: number, st
 	local x_17 = buffer_readu16(b, c + 1)
 	local x_19 = buffer_readu8(b, c + 3)
 	local x_20 = buffer_readf64(b, c + 4)
-	if x_20 ~= x_20 or x_20 == INF or x_20 == -INF then error(ERR, 0) end
+	if x_20 ~= x_20 or x_20 == INF or x_20 == -INF then error(BAD, 0) end
 	c += 12
 	local n_22 = buffer_readu8(b, c)
 	c += 1
@@ -1219,7 +2048,7 @@ RUN_R[2] = function(p: Player, b: buffer, c: number, r: { any }, ri: number, st:
 		local x_28 = buffer_readu16(b, c + 1)
 		local x_30 = buffer_readu8(b, c + 3)
 		local x_31 = buffer_readf64(b, c + 4)
-		if x_31 ~= x_31 or x_31 == INF or x_31 == -INF then error(ERR, 0) end
+		if x_31 ~= x_31 or x_31 == INF or x_31 == -INF then error(BAD, 0) end
 		c += 12
 		local n_33 = buffer_readu8(b, c)
 		c += 1
@@ -1305,7 +2134,7 @@ READ_R[4] = function(p: Player, b: buffer, c: number, r: { any }, ri: number, st
 	local n_46 = buffer_readu8(b, c)
 	c += 1
 	if n_46 >= 128 then n_46, c = rvar(b, c, n_46) end
-	if n_46 > 1000 then error(ERR, 0) end
+	if n_46 > 1000 then error(BAD, 0) end
 	if n_46 * 6 > buffer_len(b) - c then error(ERR, 0) end
 	local arr_47 = table.create(n_46)
 	for i_48 = 1, n_46 do
@@ -1333,7 +2162,7 @@ RUN_R[4] = function(p: Player, b: buffer, c: number, r: { any }, ri: number, st:
 		local n_56 = buffer_readu8(b, c)
 		c += 1
 		if n_56 >= 128 then n_56, c = rvar(b, c, n_56) end
-		if n_56 > 1000 then error(ERR, 0) end
+		if n_56 > 1000 then error(BAD, 0) end
 		if n_56 * 6 > buffer_len(b) - c then error(ERR, 0) end
 		local arr_57 = table.create(n_56)
 		for i_58 = 1, n_56 do
@@ -1391,11 +2220,8 @@ local Services = {
 				if not k then return end
 				local s = 2 * k - 2 + 1
 				if s ~= openS and sCur[s] == 0 and pend[s] == nil then
-					local b, c, rn, c0 = buffer_create(31), 0, 0, 0
-					local cap = 31
-					local more = false
-					if c + 31 > cap then b = grow(c, c + 31) end
-					if more then c -= 1 else buffer_writeu8(b, c, 1) end
+					local b, c, c0 = buffer_create(31), 0, 0
+					buffer_writeu8(b, c, 1)
 					local m_65 = (if a4 then 1 else 0) + (if a5 then 2 else 0) + (if a6 then 4 else 0)
 					buffer_writeu8(b, c + 1, m_65)
 					local vec_66 = a1
@@ -1418,7 +2244,7 @@ local Services = {
 					end
 					return
 				end
-				openStream(s)
+				if openS ~= s then openStream(s) end
 				local b, c, rn, c0 = buf, cur, refn, cur
 				local more = last == 1
 				if c + 31 > cap then b = grow(c, c + 31) end
@@ -1561,11 +2387,8 @@ local Services = {
 				if not k then return end
 				local s = 2 * k - 2 + 2
 				if s ~= openS and sCur[s] == 0 and pend[s] == nil then
-					local b, c, rn, c0 = buffer_create(31), 0, 0, 0
-					local cap = 31
-					local more = false
-					if c + 31 > cap then b = grow(c, c + 31) end
-					if more then c -= 1 else buffer_writeu8(b, c, 2) end
+					local b, c, c0 = buffer_create(31), 0, 0
+					buffer_writeu8(b, c, 2)
 					local m_83 = (if a4 then 1 else 0) + (if a5 then 2 else 0) + (if a6 then 4 else 0)
 					buffer_writeu8(b, c + 1, m_83)
 					local vec_84 = a1
@@ -1588,7 +2411,7 @@ local Services = {
 					end
 					return
 				end
-				openStream(s)
+				if openS ~= s then openStream(s) end
 				local start, refStart = cur, refn
 				local b, c, rn, c0 = buf, cur, refn, cur
 				local more = last == 2
@@ -1733,7 +2556,8 @@ Unreliable.OnServerEvent:Connect(receiver(READ_U, RUN_U))
 
 return table.freeze({
 	Services = table.freeze(Services),
-	OnReject = function(handler: (player: Player, reason: string) -> ()): () -> ()
+	Anticheat = anticheatApi,
+	OnReject = function(handler: (player: Player, reason: string, forged: boolean) -> ()): () -> ()
 		table.insert(rejectHandlers, handler)
 		return function()
 			local index = table.find(rejectHandlers, handler)

@@ -186,6 +186,11 @@ end</code></pre>
 <tr><td>Network</td><td>Max client array</td><td>16384</td><td>The longest array or map a client may send.</td></tr>
 <tr><td>Network</td><td>Early event queue</td><td>256</td><td>Events kept until the first listener connects.</td></tr>
 <tr><td>Network</td><td>Reject NaN / inf</td><td>on</td><td>Drop client numbers that are not finite.</td></tr>
+<tr><td>Network</td><td>Kick after forged packets</td><td>3</td><td>Packets no real client can send before the player is kicked (0 = only report). See <a href="network.html#kick">Forged packets</a>.</td></tr>
+<tr><td>Network</td><td>Default rate</td><td>3000/s</td><td>Rate for client events and functions that set none (empty = none).</td></tr>
+<tr><td>Network</td><td>Anticheat</td><td>on</td><td>A signed heartbeat and self-checks; your own checks join through <code>Branch.Network.Anticheat</code>. See <a href="../anticheat.html">Anticheat</a>.</td></tr>
+<tr><td>Network</td><td>Strict mode</td><td>off</td><td>Every client packet carries an 8-byte tag, and sends work only from the game's scripts. See <a href="../anticheat.html#strict">Strict mode</a>.</td></tr>
+<tr><td>Network</td><td>New ids</td><td>button</td><td>Gives every event of the place a new random id (see <a href="network.html#ids">Event ids</a>).</td></tr>
 <tr><td>Templates</td><td>New service / New controller</td><td>built in</td><td>The text of new modules; <code>{NAME}</code> becomes the module's name.</td></tr>
 <tr><td>Casing</td><td>Custom prefix</td><td><code>omo</code></td><td>Prefix for the custom casing button.</td></tr>
 <tr><td>Editor</td><td>Live window</td><td>on</td><td>While you Play, <a href="#live">Branch (live)</a> shows each event's traffic, every <code>Init</code> time and players' data.</td></tr>

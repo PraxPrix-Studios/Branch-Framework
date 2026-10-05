@@ -27,6 +27,9 @@
 			["api/types", "Network types"],
 			["api/util", "Utilities"],
 		] },
+		{ group: "safe", title: "Security", pages: [
+			["anticheat", "Anticheat"],
+		] },
 		{ group: "perf", title: "Performance", pages: [
 			["benchmarks", "Benchmarks"],
 		] },
@@ -51,6 +54,7 @@
 		'<a href="' + href("features") + '">Features</a>' +
 		'<a href="' + href("getting-started") + '">Docs</a>' +
 		'<a href="' + href("api/branch") + '">API</a>' +
+		'<a href="' + href("anticheat") + '">Anticheat</a>' +
 		'<a href="' + href("benchmarks") + '">Benchmarks</a>' +
 		'<a href="' + REPO + '">GitHub</a></nav>' +
 		'<button class="menu" type="button" aria-expanded="false" aria-controls="sidebar">Menu</button>';

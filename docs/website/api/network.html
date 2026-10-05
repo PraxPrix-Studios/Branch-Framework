@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Branch.Network · Branch</title>
-<meta name="description" content="API reference for Branch.Network: Fire, FireAll, FireList, FireExcept, FireNear, FireFrom, Forget, On, At, Invoke and OnReject.">
+<meta name="description" content="API reference for Branch.Network: Fire, FireAll, FireList, FireExcept, FireNear, FireFrom, Forget, On, At, Invoke, OnReject and Anticheat.">
 <link rel="icon" href="../assets/mark.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
@@ -29,13 +29,15 @@ Net.Unit.Forget(id)                           -- Delta + Key: drop an object's s
 Net.Mob.Exact(id, true)                       -- Predict: no guessing for this object for now
 Net.Hit.On(function(player, hit) end)         -- a client's event, already validated
 Net.Buy.On(function(player, item) return true end) -- a function's one handler
-Branch.Network.OnReject(function(player, reason) end) -- refused packets, rate limits
+Branch.Network.OnReject(function(player, reason, forged) end) -- refused packets, rate limits, guards
+Branch.Network.Anticheat.OnFlag(function(player, check, detail) end) -- anticheat findings
 
 -- client: Branch.Network.Client.&lt;Service&gt;.&lt;Event&gt;
 Net.Hit.Fire({ Target = model })              -- to the server, batched per frame
 Net.Damage.On(function(amount) end)           -- returns a function that disconnects
 local pos = Net.Mob.At(id)                    -- Predict events: the guess for right now
-local ok = Net.Buy.Invoke("sword")            -- yields for the answer; errors if it failed</code></pre>
+local ok = Net.Buy.Invoke("sword")            -- yields for the answer; errors if it failed
+Branch.Network.Anticheat.Check("speed", fn)   -- your own check, every 5 s (see Anticheat)</code></pre>
 <ul class="glance-notes">
   <li><strong>Batched per frame:</strong> everything you fire for a player in one frame leaves as one remote call, in order.</li>
   <li><strong>Server-side checks</strong> run before any listener sees a client's data; bad packets go to <code>OnReject</code>.</li>
@@ -45,7 +47,8 @@ local ok = Net.Buy.Invoke("sword")            -- yields for the answer; errors i
 
 <pre><code>Branch.Network.Server.&lt;Service&gt;.&lt;Event&gt;   -- on the server
 Branch.Network.Client.&lt;Service&gt;.&lt;Event&gt;   -- on a client
-Branch.Network.OnReject                    -- on the server</code></pre>
+Branch.Network.OnReject                    -- on the server
+Branch.Network.Anticheat                   -- both sides</code></pre>
 <p>The server half is generated into <code>ServerScriptService.BranchNetworkServer</code>, so players never download it; you always use it through <code>Branch.Network</code>.</p>
 <p>In the signatures below, <code>...args</code> stands for the arguments your <code>Data</code> declares: nothing, one value, a tuple, a struct table, or the struct's fields with <code>Unpack</code>. See <a href="../guide/network.html#declare">Declare</a>.</p>
 <div class="note">
@@ -150,11 +153,104 @@ end)</code></pre>
 <h2>Rejected packets</h2>
 <div class="api" id="onreject">
 <h3>Branch.Network.OnReject <span class="tag">server</span></h3>
-<div class="sig">Branch.Network.<b>OnReject</b>(handler: (player: Player, reason: string) -&gt; ()): () -&gt; ()</div>
-<p>Called when a client sends a packet that fails validation: wrong sizes, out-of-range values, NaN, wrong Instance classes, forged lengths or oversized packets. The packet is dropped either way. Also called (at most once a second per player and event) when a client goes over an event's <code>Rate</code>; that reason starts with <code>rate limit:</code>. Use it to log or kick exploiters. Returns a function that removes the handler.</p>
-<pre><code>Branch.Network.OnReject(function(player, reason)
-	warn(`{player.Name}: {reason}`)
+<div class="sig">Branch.Network.<b>OnReject</b>(handler: (player: Player, reason: string, forged: boolean) -&gt; ()): () -&gt; ()</div>
+<p>Called when a client sends a packet that fails validation: wrong sizes, out-of-range values, NaN, wrong Instance classes, forged lengths or oversized packets. The packet is dropped either way. Also called (at most once a second per player and event) when a client goes over an event's <code>Rate</code> (reason <code>rate limit:</code>) or breaks a guard (<code>cooldown:</code>, <code>not alive:</code>, <code>too far:</code>, <code>not theirs:</code>). <code>forged</code> is true for packets no Branch client can produce; those also count towards the automatic kick (Settings › Network › Kick after forged packets). Returns a function that removes the handler.</p>
+<pre><code>Branch.Network.OnReject(function(player, reason, forged)
+	warn(`{player.Name}: {reason}{if forged then " (forged)" else ""}`)
 end)</code></pre>
+</div>
+
+<h2>Anticheat</h2>
+<p>How it all fits together: <a href="../anticheat.html">Anticheat</a>. Each finding is a check name and an optional detail; what happens is up to <code>SetAction</code>.</p>
+<div class="api" id="anticheat-check">
+<h3>Anticheat.Check <span class="tag">client</span></h3>
+<div class="sig">Branch.Network.Anticheat.<b>Check</b>(name: string, check: () -&gt; any, every: number?): () -&gt; ()</div>
+<p>Adds a check that runs every <code>every</code> seconds (5 if left out, 1 or more) in a thread of its own. Returning a string (the detail) or <code>true</code> flags the player under <code>name</code>; the finding rides the next signed heartbeat. A name can be taken once. Returns a function that takes the check away and frees its name. Does nothing while the anticheat is off.</p>
+</div>
+<div class="api" id="anticheat-report">
+<h3>Anticheat.Report <span class="tag">client</span></h3>
+<div class="sig">Branch.Network.Anticheat.<b>Report</b>(check: string, detail: string?)</div>
+<p>Flags the player now, from your own client code; sent with a heartbeat on the next frame.</p>
+</div>
+<div class="api" id="anticheat-flag">
+<h3>Anticheat.Flag <span class="tag">server</span></h3>
+<div class="sig">Branch.Network.Anticheat.<b>Flag</b>(player: Player, check: string, detail: string?)</div>
+<p>A finding of your server code: <code>OnFlag</code>, <code>OnReject</code> and the check's action, like any other. Works with the anticheat off too.</p>
+</div>
+<div class="api" id="anticheat-onflag">
+<h3>Anticheat.OnFlag <span class="tag">server</span></h3>
+<div class="sig">Branch.Network.Anticheat.<b>OnFlag</b>(handler: (player: Player, check: string, detail: string?, score: number) -&gt; ()): () -&gt; ()</div>
+<p>Called for every finding whose action is not <code>"ignore"</code>, in Studio too, with the player's score after it. Returns a function that removes the handler.</p>
+</div>
+<div class="api" id="anticheat-use">
+<h3>Anticheat.Use <span class="tag">server</span></h3>
+<div class="sig">Branch.Network.Anticheat.<b>Use</b>(name: "speed" | "teleport" | "fly" | "noclip", options: { [string]: number }? | false)</div>
+<p>Turns on a ready-made movement check, with its options changed (<code>speed</code>: <code>max</code> 0 = WalkSpeed, <code>tolerance</code> 1.75; <code>teleport</code>: <code>distance</code> 100; <code>fly</code>: <code>height</code> 16, <code>time</code> 4); <code>false</code> turns it off. See <a href="../anticheat.html#ready">Ready-made checks</a>.</p>
+</div>
+<div class="api" id="anticheat-pause">
+<h3>Anticheat.Pause <span class="tag">server</span></h3>
+<div class="sig">Branch.Network.Anticheat.<b>Pause</b>(player: Player, seconds: number)</div>
+<p>The ready-made checks leave the player alone for that long: your game moves them itself (a dash, a launch pad). Setting the character's CFrame from a script pauses them on its own.</p>
+</div>
+<div class="api" id="anticheat-preset">
+<h3>Anticheat.Preset <span class="tag">server</span></h3>
+<div class="sig">Branch.Network.Anticheat.<b>Preset</b>(name: "Basic" | "Advanced")</div>
+<p><code>"Basic"</code> (the default): each check acts on its own. <code>"Advanced"</code>: checks only report, a score of 5 restricts, 10 kicks, 1 point a minute is forgotten. Calls to <code>SetAction</code>, <code>SetLevel</code> and <code>SetDecay</code> afterwards change it.</p>
+</div>
+<div class="api" id="anticheat-setweight">
+<h3>Anticheat.SetWeight <span class="tag">server</span></h3>
+<div class="sig">Branch.Network.Anticheat.<b>SetWeight</b>(check: string, weight: number)</div>
+<p>How much a finding of the check adds to the player's score (your checks: 1 by default).</p>
+</div>
+<div class="api" id="anticheat-setlevel">
+<h3>Anticheat.SetLevel <span class="tag">server</span></h3>
+<div class="sig">Branch.Network.Anticheat.<b>SetLevel</b>(at: number, action: "restrict" | "kick" | (player: Player, record: AnticheatRecord) -&gt; () | nil)</div>
+<p>When a player's score first reaches <code>at</code>, the action runs once. <code>nil</code> removes the level.</p>
+</div>
+<div class="api" id="anticheat-setdecay">
+<h3>Anticheat.SetDecay <span class="tag">server</span></h3>
+<div class="sig">Branch.Network.Anticheat.<b>SetDecay</b>(perMinute: number)</div>
+<p>The score goes down by this many points a minute (0, the Basic default: never).</p>
+</div>
+<div class="api" id="anticheat-restrict">
+<h3>Anticheat.Restrict / IsRestricted <span class="tag">server</span></h3>
+<div class="sig">Branch.Network.Anticheat.<b>Restrict</b>(player: Player, on: boolean?) · <b>IsRestricted</b>(player: Player): boolean</div>
+<p>A restricted player's refused requests count as forged, and their rate limits refill at a quarter of the speed. <code>Restrict(player, false)</code> lifts it.</p>
+</div>
+<div class="api" id="anticheat-getflagged">
+<h3>Anticheat.GetFlagged / GetRecord <span class="tag">server</span></h3>
+<div class="sig">Branch.Network.Anticheat.<b>GetFlagged</b>(): { AnticheatRecord } · <b>GetRecord</b>(player: Player): AnticheatRecord?</div>
+<p>The records of the players in the server with a finding (highest score first), or one player's. A record is a frozen copy: <code>{ player, score, restricted, checks = { [check] = { count, detail, at } }, history }</code>, with the last 50 findings; <code>at</code> is <code>os.time()</code>.</p>
+</div>
+<div class="api" id="anticheat-onchanged">
+<h3>Anticheat.OnChanged <span class="tag">server</span></h3>
+<div class="sig">Branch.Network.Anticheat.<b>OnChanged</b>(handler: (player: Player, record: AnticheatRecord?) -&gt; ()): () -&gt; ()</div>
+<p>Called whenever a player's record changes; <code>record</code> is nil when it is gone (pardoned, or the player left). For live admin panels.</p>
+</div>
+<div class="api" id="anticheat-pardon">
+<h3>Anticheat.Pardon <span class="tag">server</span></h3>
+<div class="sig">Branch.Network.Anticheat.<b>Pardon</b>(player: Player, check: string?)</div>
+<p>Forgives one check (its findings and their score) or, without one, everything, restriction included.</p>
+</div>
+<div class="api" id="anticheat-share">
+<h3>Anticheat.ShareAcrossServers <span class="tag">server</span></h3>
+<div class="sig">Branch.Network.Anticheat.<b>ShareAcrossServers</b>(on: boolean?)</div>
+<p>Every server of the game shares its flagged players through MessagingService (changes at most every 3 s, messages under 1 KB). Call it on every server; <code>false</code> stops it and the others forget this server's players. See <a href="../anticheat.html#servers">Across servers</a>.</p>
+</div>
+<div class="api" id="anticheat-global">
+<h3>Anticheat.GetFlaggedGlobal / OnGlobalChanged <span class="tag">server</span></h3>
+<div class="sig">Branch.Network.Anticheat.<b>GetFlaggedGlobal</b>(): { AnticheatGlobalEntry } · <b>OnGlobalChanged</b>(handler: (userId: number, entry: AnticheatGlobalEntry?) -&gt; ()): () -&gt; ()</div>
+<p>The flagged players of this server and of every other server sharing, highest score first; an entry is a frozen <code>{ userId, name, score, restricted, checks = { [check] = count }, server, placeId, here }</code>. The handler hears every change, with <code>nil</code> when a player is gone.</p>
+</div>
+<div class="api" id="anticheat-setaction">
+<h3>Anticheat.SetAction <span class="tag">server</span></h3>
+<div class="sig">Branch.Network.Anticheat.<b>SetAction</b>(check: string, action: "kick" | "report" | "ignore", after: number?)</div>
+<p>What a check does: <code>"kick"</code> (the default for every check but <code>strict</code>), <code>"report"</code> (handlers only) or <code>"ignore"</code>. With <code>after</code>, <code>"kick"</code> kicks from a player's <code>after</code>-th finding of that check on; the ones before only report. Kicks never happen in Studio or with Kick after forged packets at 0.</p>
+</div>
+<div class="api" id="anticheat-kickmessage">
+<h3>Anticheat.SetKickMessage <span class="tag">server</span></h3>
+<div class="sig">Branch.Network.Anticheat.<b>SetKickMessage</b>(message: string)</div>
+<p>The message kicked players see.</p>
 </div>
 
 <h2>Listener modes</h2>
