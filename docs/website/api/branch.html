@@ -28,7 +28,7 @@ Branch:LocateSegments({ "Shop", "Coin" })     -- several at once, by name
 Branch:AwaitStart()                           -- yields until every Start has run
 Branch:GetPhase()                             -- "Idle" | "Loading" | "Initializing" | "Started"
 Branch:GetReport()                            -- every segment: name, path, status, Init time
-Branch.Version                                -- "2.0.0"
+Branch.Version                                -- "2.5.0"
 
 Branch.Data.Server / Branch.Data.Client       -- player data (loaded on first use)
 Branch.Network.Server / .Client / .OnReject   -- your compiled events (from Branch Studio)
@@ -46,7 +46,7 @@ Branch.Keybinds.Gameplay.Jump                 -- input actions (Branch Studio's 
 <div class="api" id="version">
 <h3>Branch.Version <span class="tag">field</span></h3>
 <div class="sig">Branch.<b>Version</b>: string</div>
-<p>The runtime version, for example <code>"2.0.0"</code>.</p>
+<p>The runtime version, for example <code>"2.5.0"</code>.</p>
 </div>
 
 <div class="api" id="start">
