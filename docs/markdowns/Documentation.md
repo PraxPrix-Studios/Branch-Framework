@@ -135,7 +135,7 @@ return CombatService
 ```lua
 -- server
 local Net = Branch.Network.Server.CombatService
-Net.Damage.Fire(player, 25, true)       -- also FireAll / FireList / FireExcept / FireNear(position, radius, ...)
+Net.Damage.Fire(player, 25, true)       -- also FireAll / FireList / FireExcept / FireNear(position, radius, ...) / FireGroup(group, ...)
 Net.Mob.FireFrom(position, mob)         -- events with Lod: each player at the rate of their distance
 Net.Buy.On(function(player, item) return true end)
 
@@ -148,7 +148,7 @@ local ok = Net.Buy.Invoke("sword")
 **Types:**
 
 - **Numbers:** `u8 u16 u32 i8 i16 i32 f16 f32 f64 number`, with ranges (`u8(0..100)`) and steps (`f32(0..1, 0.01)` sends 1 byte instead of 4).
-- **Other values:** `boolean`, `string(..32)`, `buffer`, `vector`, `CFrame`, `Color3`, `Instance(Model)`, `Enum(KeyCode)`, `enum(A, B)`, `unknown`.
+- **Other values:** `boolean`, `string(..32)`, `buffer`, `vector`, `CFrame`, `CFrame(compact)`, `Color3`, `Instance(Model)`, `Enum(KeyCode)`, `enum(A, B)`, `unknown`.
 - **Containers:** arrays `T[]`, maps `{ [K]: V }`, structs, optionals `T?`.
 
 **How it stays fast and safe:**

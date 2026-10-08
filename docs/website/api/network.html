@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Branch.Network · Branch</title>
-<meta name="description" content="API reference for Branch.Network: Fire, FireAll, FireList, FireExcept, FireNear, FireFrom, Forget, On, At, Invoke, OnReject and Anticheat.">
+<meta name="description" content="API reference for Branch.Network: Fire, FireAll, FireList, FireExcept, FireNear, FireGroup, FireFrom, Forget, On, At, Invoke, Group, OnReject and Anticheat.">
 <link rel="icon" href="../assets/mark.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
@@ -24,11 +24,13 @@ Net.Damage.FireAll(25)                        -- everyone, sent once
 Net.Damage.FireList({ a, b }, 25)             -- a list of players
 Net.Damage.FireExcept(player, 25)             -- everyone but one
 Net.Damage.FireNear(position, 100, 25)        -- players within 100 studs
+Net.Damage.FireGroup(group, 25)               -- the players in a group
 Net.Mob.FireFrom(position, mob)               -- Lod events: rate by distance
 Net.Unit.Forget(id)                           -- Delta + Key: drop an object's state
 Net.Mob.Exact(id, true)                       -- Predict: no guessing for this object for now
 Net.Hit.On(function(player, hit) end)         -- a client's event, already validated
 Net.Buy.On(function(player, item) return true end) -- a function's one handler
+local group = Branch.Network.Group("group1")  -- players by name: Add, Remove, Has, Players
 Branch.Network.OnReject(function(player, reason, forged) end) -- refused packets, rate limits, guards
 Branch.Network.Anticheat.OnFlag(function(player, check, detail) end) -- anticheat findings
 
@@ -86,6 +88,11 @@ Branch.Network.Anticheat                   -- both sides</code></pre>
 <h3>Event.FireNear <span class="tag">server</span></h3>
 <div class="sig">Server.Service.Event.<b>FireNear</b>(position: Vector3, radius: number, ...args)</div>
 <p>Sends to every player whose <code>Character.PrimaryPart</code> is within <code>radius</code> studs of <code>position</code>. Players without a character are skipped.</p>
+</div>
+<div class="api" id="firegroup">
+<h3>Event.FireGroup <span class="tag">server</span></h3>
+<div class="sig">Server.Service.Event.<b>FireGroup</b>(group: Group | string | number, ...args)</div>
+<p>Sends to every player in the group: the object <a href="#group"><code>Branch.Network.Group</code></a> returns, or its name. An empty or unknown group sends nothing.</p>
 </div>
 <div class="api" id="firefrom">
 <h3>Event.FireFrom <span class="tag">server · Lod only</span></h3>
@@ -148,6 +155,20 @@ end)</code></pre>
 <h3>Function.On <span class="tag">server</span></h3>
 <div class="sig">Server.Service.Function.<b>On</b>(handler: (player: Player, ...args) -&gt; ...returns)</div>
 <p>Sets the one handler for the function. Setting it again replaces the old one. Requests that arrived before the handler was set are answered once it is.</p>
+</div>
+
+<h2>Groups</h2>
+<div class="api" id="group">
+<h3>Branch.Network.Group <span class="tag">server</span></h3>
+<div class="sig">Branch.Network.<b>Group</b>(name: string | number): Group</div>
+<p>The group with that name. The same name always means the same group, so any script can reach it by name. Every server → client event can send to it with <a href="#firegroup"><code>FireGroup</code></a>.</p>
+<pre><code>local group = Branch.Network.Group("group1")
+group:Add(player)       -- a player can be in many groups; adding twice changes nothing
+group:Remove(player)
+group:Has(player)       -- true / false
+group:Players()         -- a copy of the list
+group.Name              -- "group1"</code></pre>
+<p>A player who leaves the game leaves every group on their own, and a group with nobody left in it frees its memory: names made while the game runs (<code>"group" .. n</code>) never pile up. Adding a player who has already left does nothing.</p>
 </div>
 
 <h2>Rejected packets</h2>

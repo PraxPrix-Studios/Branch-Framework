@@ -48,7 +48,7 @@
 	top.className = "top";
 	top.innerHTML =
 		'<a class="brand" href="' + href("index") + '"><img src="' + root + 'assets/mark.png" alt="">Branch</a>' +
-		'<span class="ver">v2.5.0</span>' +
+		'<span class="ver">v2.5.1</span>' +
 		'<button class="search-open" type="button" aria-label="Search the docs"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 20 20"/></svg><span>Search</span><kbd>' + (isMac ? "⌘" : "Ctrl") + " K</kbd></button>" +
 		'<nav class="links" aria-label="Main">' +
 		'<a href="' + href("features") + '">Features</a>' +

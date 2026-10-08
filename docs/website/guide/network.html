@@ -82,6 +82,7 @@ return CombatService</code></pre>
 <tr><td>a struct whose fields rarely all change</td><td><a href="#delta"><code>Delta</code></a> (+ <code>Key</code> for many objects)</td><td>the fields that did not change</td></tr>
 <tr><td>positions that jitter by tiny amounts</td><td><a href="#threshold"><code>Threshold</code></a> (with <code>Delta</code>)</td><td>moves too small to matter</td></tr>
 <tr><td>things that move steadily: walking mobs, projectiles, timers</td><td><a href="#predict"><code>Predict</code></a> (with <code>Delta</code>)</td><td>almost every update while they keep their speed</td></tr>
+<tr><td><code>CFrame</code> values whose rotation does not need to be exact</td><td><a href="../api/types.html"><code>CFrame(compact)</code></a></td><td>8 of 24 bytes (14 with <code>f16</code>)</td></tr>
 <tr><td>lists of small numbers: inventories, grids, stats</td><td><a href="#pack"><code>Pack</code></a></td><td>30-50% of those bytes</td></tr>
 <tr><td>numbers in a bigger type than they need</td><td><a href="#see">Profile</a> in Branch Studio</td><td>1-7 bytes per number</td></tr>
 </tbody></table></div>
@@ -246,6 +247,7 @@ Net.Damage.FireAll(25, true)                      -- everyone
 Net.Damage.FireList({ a, b }, 25, true)           -- a list of players
 Net.Damage.FireExcept(player, 25, true)           -- everyone but one
 Net.Damage.FireNear(position, 100, 25, true)      -- players within 100 studs
+Net.Damage.FireGroup(group, 25, true)             -- the players in a group
 Net.Mob.FireFrom(position, mob)                   -- Lod events: rate by distance
 Net.Hit.On(function(player, hit) end)             -- client -> server event
 Net.Buy.On(function(player, item) return true end) -- a function's handler
@@ -262,6 +264,19 @@ local ok = Net.Buy.Invoke("sword")                -- yields for the answer</code
   <li><strong><code>On</code> for events</strong> returns a function that disconnects the listener. An event can have many listeners.</li>
   <li><strong><code>On</code> for functions</strong> sets the one handler. Setting it again replaces it.</li>
   <li><strong><code>Invoke</code></strong> raises an error on the client if the server's handler errored. It also errors if the call could not be queued.</li>
+</ul>
+
+<h3 id="groups">Groups: send to a set of players</h3>
+<p>When the same events keep going to the same players, put them in a group and send to the group. Any script on the server reaches a group by its name.</p>
+<pre><code>local group = Branch.Network.Group("group1")
+group:Add(player)
+group:Remove(player)
+
+Net.Damage.FireGroup(group, 25, true)     -- or by name: FireGroup("group1", 25, true)</code></pre>
+<ul>
+  <li><strong>Nothing to clean up.</strong> A player who leaves the game leaves every group, and an empty group frees its memory.</li>
+  <li><strong>Everything still works:</strong> <code>FireGroup</code> sends the way <code>FireList</code> does, with <code>Latest</code>, <code>Hz</code>, <code>Delta</code> and <code>Predict</code> as usual.</li>
+  <li>A player can be in many groups at once. See <a href="../api/network.html#group">the API</a>.</li>
 </ul>
 
 <h2>How it travels</h2>

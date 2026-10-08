@@ -64,7 +64,8 @@
 <tr><td><code>string(..32)</code></td><td>text of at most 32 bytes</td><td>Also <code>string(8)</code> for an exact length, or <code>string(4..16)</code>.</td></tr>
 <tr><td><code>buffer</code>, <code>buffer(..512)</code></td><td>a buffer</td><td>Length rules as for strings.</td></tr>
 <tr><td><code>vector</code></td><td>a <code>Vector3</code></td><td>Three <code>f32</code> (12 bytes). <code>vector(f16)</code> uses three <code>f16</code> (6 bytes); any number type works.</td></tr>
-<tr><td><code>CFrame</code></td><td>a <code>CFrame</code></td><td>24 bytes.</td></tr>
+<tr><td><code>CFrame</code></td><td>a <code>CFrame</code></td><td>24 bytes: the position as three <code>f32</code>, the rotation as three angles.</td></tr>
+<tr><td><code>CFrame(compact)</code></td><td>a <code>CFrame</code></td><td>16 bytes: the rotation takes 4 bytes and arrives about 0.1° off on average, under 0.2° at worst. Add a float type for the position: <code>CFrame(compact, f16)</code> is 10 bytes, <code>CFrame(f16)</code> 18. Like <code>vector(f16)</code>, an <code>f16</code> position is precise only near the center of the world: at 1,000 studs from it, the step is 0.5 studs.</td></tr>
 <tr><td><code>Color3</code></td><td>a <code>Color3</code></td><td>3 bytes: one byte per channel, like <code>Color3.fromRGB</code>.</td></tr>
 <tr><td><code>Instance</code>, <code>Instance(Model)</code></td><td>an Instance</td><td>Travels as a Roblox reference, so it must exist on the receiving side. With a class, the server refuses Instances that are not <code>:IsA</code> it.</td></tr>
 <tr><td><code>Enum(KeyCode)</code></td><td>an <code>EnumItem</code> of that Enum</td><td>2 bytes. A mistyped Enum name is a compile error.</td></tr>
