@@ -29,6 +29,8 @@ local Path = require(script.Parent.Path)
 
 type DataPath = Types.DataPath
 type PlayerData = Types.PlayerData
+type Stat = { path: string, name: string } -- a leaderstats value and the path it mirrors
+type Listed = { userId: number, name: string, data: any } -- a player in the debug list
 
 export type Config = {
 	Template: { [string]: any },
@@ -75,8 +77,8 @@ local function requireLoaded(player: Player, action: string): any
 	return data
 end
 
-local function leaderstatsList(spec: any): { { path: string, name: string } }
-	local list = {}
+local function leaderstatsList(spec: any): { Stat }
+	local list: { Stat } = {}
 	if #spec > 0 then
 		for _, path in spec do
 			local parts = Path.parse(path)
@@ -86,19 +88,19 @@ local function leaderstatsList(spec: any): { { path: string, name: string } }
 		for path, name in spec do
 			table.insert(list, { path = path, name = name })
 		end
-		table.sort(list, function(a, b)
+		table.sort(list, function(a: Stat, b: Stat)
 			return a.name < b.name
 		end)
 	end
 	return list
 end
 
-local function bindLeaderstats(list: { { path: string, name: string } })
+local function bindLeaderstats(list: { Stat })
 	Server.OnLoaded(function(player: Player)
-		local folder = player:FindFirstChild("leaderstats") or Instance.new("Folder")
+		local folder: Instance = player:FindFirstChild("leaderstats") or Instance.new("Folder")
 		folder.Name = "leaderstats"
 		for _, stat in list do
-			local current = Server.Get(player, stat.path)
+			local current = Server.Get(player, stat.path :: any)
 			-- numbers use NumberValue: an IntValue would cut 2.5 down to 2 later
 			local className = if type(current) == "number"
 				then "NumberValue"
@@ -116,7 +118,7 @@ local function bindLeaderstats(list: { { path: string, name: string } })
 				value.Name = stat.name
 				value.Parent = folder
 			end
-			Server.Observe(player, stat.path, function(new)
+			Server.Observe(player, stat.path :: any, function(new)
 				value.Value = if className == "StringValue" then tostring(new) else new
 			end)
 		end
@@ -239,11 +241,11 @@ function Server.Start(config: Config)
 		end
 		local ops: { [string]: (...any) -> ...any } = {}
 		function ops.list(): { any }
-			local out = {}
+			local out: { Listed } = {}
 			for player, data in loaded do
 				table.insert(out, { userId = player.UserId, name = player.Name, data = deepCopy(data) })
 			end
-			table.sort(out, function(a, b)
+			table.sort(out, function(a: Listed, b: Listed)
 				return a.name < b.name
 			end)
 			return out
@@ -251,7 +253,9 @@ function Server.Start(config: Config)
 		function ops.set(userId: number, path: string, value: any): (boolean, string?)
 			for player in loaded do
 				if player.UserId == userId then
-					local ok, problem = pcall(Server.Set, player, path, value)
+					local ok, problem = pcall(function()
+						Server.Set(player, path :: any, value)
+					end)
 					return ok, if ok then nil else message(problem)
 				end
 			end
@@ -275,14 +279,19 @@ function Server.Start(config: Config)
 			local from = (version or 0) + 1
 			reconcile(data, template)
 			for index = from, latest do
-				local ok, problem = pcall(migrations[index], data)
+				local ok, problem = pcall(function()
+					migrations[index](data)
+				end)
 				if not ok then
 					return { ok = false, from = from, to = latest, problem = `Migrations[{index}] failed: {message(problem)}` }
 				end
 			end
 			for key in template do
 				if type(key) == "string" then
-					local ok, problem = pcall(Path.check, template, { key }, data[key])
+					local parts: { string | number } = { key }
+					local ok, problem = pcall(function()
+						Path.check(template, parts, data[key])
+					end)
 					if not ok then
 						return { ok = false, from = from, to = latest, result = data, problem = message(problem) }
 					end

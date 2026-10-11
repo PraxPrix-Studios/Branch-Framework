@@ -53,10 +53,12 @@ export type NetworkerServer = typeof(setmetatable(
 function NetworkerServer.new(networkTag: NetworkTag, module: {}?, clientAccess: ClientAccess?): NetworkerServer
 	assert(RunService:IsServer(), "NetworkerServer can only be created on the server")
 
-	local self = setmetatable({
+	-- Branch patch: typed up front, so the fields set below check against
+	-- NetworkerServer (the new type solver rejected the partial table)
+	local self: NetworkerServer = setmetatable({
 		networkTag = networkTag,
 		_accessLookup = {},
-	}, NetworkerServer)
+	} :: any, NetworkerServer)
 
 	local remotes = Instance.new("Folder")
 	local event = Instance.new("RemoteEvent")
@@ -201,12 +203,12 @@ end
 	@param ... any? -- The arguments to pass to the method  
 	@return ()  
 ]=]
-function NetworkerServer.fire(self: NetworkerServer, players: PlayerGroup, method: string, ...: any?): ()
+function NetworkerServer.fire(self: NetworkerServer, players: PlayerGroup, method: string | number, ...: any?): ()
 	-- Branch patch: a player who already left (data written during their
 	-- PlayerRemoving) has nobody to receive the update.
 	if typeof(players) == "Instance" then
 		if (players :: Player).Parent ~= nil then
-			self.event:FireClient(players, method, ...)
+			self.event:FireClient(players :: Player, method, ...)
 		end
 		return
 	end
@@ -224,7 +226,7 @@ end
 	@param ... any? -- The arguments to pass to the method  
 	@return ()  
 ]=]
-function NetworkerServer.fireAll(self: NetworkerServer, method: string, ...: any?): ()
+function NetworkerServer.fireAll(self: NetworkerServer, method: string | number, ...: any?): ()
 	self.event:FireAllClients(method, ...)
 end
 
@@ -235,9 +237,9 @@ end
 	@param ... any? -- The arguments to pass to the method  
 	@return ()  
 ]=]
-function NetworkerServer.fireAllExcept(self: NetworkerServer, players: PlayerGroup, method: string, ...: any?): ()
+function NetworkerServer.fireAllExcept(self: NetworkerServer, players: PlayerGroup, method: string | number, ...: any?): ()
 	if typeof(players) == "Instance" then
-		players = { players }
+		players = { players :: Player }
 	end
 
 	for _, player in Players:GetPlayers() do
@@ -253,7 +255,7 @@ end
 	@param ... any? -- The arguments to pass to the method  
 	@return ()  
 ]=]
-function NetworkerServer.fireRecipients(self: NetworkerServer, method: string, ...: any?): ()
+function NetworkerServer.fireRecipients(self: NetworkerServer, method: string | number, ...: any?): ()
 	if not self.recipients then
 		warn("No recipients set for service ", self.networkTag)
 		return

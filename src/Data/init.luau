@@ -15,7 +15,10 @@ local function wrongSide(message: string): any
 	})
 end
 
-local Data: { Server: Server, Client: Client, Path: typeof(require(script.Path)) }
+-- A named type, and the return cast to it: the new Luau type solver loses an
+-- inline annotation through table.freeze (Branch.Data came out as any).
+type Api = { Server: Server, Client: Client, Path: typeof(require(script.Path)) }
+local Data: Api
 
 if not RunService:IsRunning() then
 	Data = {
@@ -37,4 +40,4 @@ else
 	}
 end
 
-return table.freeze(Data)
+return table.freeze(Data) :: Api

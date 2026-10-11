@@ -9,7 +9,8 @@ end
 local Packages = script.Parent
 local Signal = require(Packages.Signal)
 local Networker = require(Packages.Networker)
-local ProfileStore = if RunService:IsServer() then require(Packages.ProfileStore) else nil :: any
+-- Branch patch: ProfileStore only loads on the server, so it is typed as any here
+local ProfileStore: any = if RunService:IsServer() then require(Packages.ProfileStore) else nil
 local Data = require(script.Parent.Data)
 local DataServiceUtils = require(script.Parent.DataServiceUtils)
 
@@ -89,7 +90,7 @@ type DataOptions = {
 	profileStoreDataPrefix: string?,
 }
 
-type Profile = ProfileStore.Profile<any>
+type Profile = any
 
 --[=[
 	@class DataServiceServer
@@ -252,7 +253,9 @@ function DataServiceServer._playerAdded(self: DataServiceServer, player: Player)
 			if self._globalCallbacks[messageData.key](player, messageData.data) ~= false then
 				processed()
 			end
-			waitConnection:Disconnect()
+			if waitConnection then
+				waitConnection:Disconnect()
+			end
 		end)
 	end)
 end
@@ -513,7 +516,7 @@ function DataServiceServer.get(self: DataServiceServer, player: Player, path: Pa
 	-- arrive: data that has not loaded, or a forged path, returns nil
 	-- instead of erroring on the server.
 	local data = self._data[player]
-	if data == nil then
+	if not data then
 		return nil
 	end
 	if path == nil or type(path) == "string" then
@@ -522,7 +525,7 @@ function DataServiceServer.get(self: DataServiceServer, player: Player, path: Pa
 	if type(path) ~= "table" or #path > 32 then
 		return nil
 	end
-	local node = data:get()
+	local node: any = data:get()
 	for _, key in path do
 		if type(node) ~= "table" or (type(key) ~= "string" and type(key) ~= "number") then
 			return nil
@@ -739,7 +742,7 @@ function DataServiceServer.getArrayRemovedSignal(self: DataServiceServer, player
 end
 
 export type DataServiceServer = typeof(DataServiceServer) & {
-	playerStore: ProfileStore.ProfileStore<any>,
+	playerStore: any,
 	networker: Networker.Server,
 }
 

@@ -31,18 +31,18 @@ export type NetworkerClient = typeof(setmetatable(
 	@param module {} -- The class or service the networker will be communicating with  
 	@return NetworkerClient  
 ]=]
-function NetworkerClient.new(networkTag: NetworkTag, module: {}): NetworkerClient
+function NetworkerClient.new(networkTag: NetworkTag, module: any): NetworkerClient
 	assert(RunService:IsClient(), "NetworkerClient can only be created on the client")
 
-	local self = {
+	-- Branch patch: typed up front, so the fields set below check against
+	-- NetworkerClient (the new type solver rejected the partial table)
+	local self: NetworkerClient = setmetatable({
 		networkTag = networkTag,
 		changedSignals = {},
-	}
-
-	setmetatable(self, NetworkerClient)
+	} :: any, NetworkerClient)
 
 	if not RunService:IsRunning() then
-		return self :: any
+		return self
 	end
 
 	if typeof(networkTag) == "Instance" then
@@ -56,14 +56,14 @@ function NetworkerClient.new(networkTag: NetworkTag, module: {}): NetworkerClien
 		self.networkTag = attributeTag
 	end
 
-	local remotes = script.Parent:WaitForChild("_remotes"):WaitForChild(self.networkTag) :: RemotesContainer
+	local remotes = script.Parent:WaitForChild("_remotes"):WaitForChild(self.networkTag :: string) :: RemotesContainer
 	self.remotes = remotes
 
 	remotes.Destroying:Once(function()
 		self:destroy()
 	end)
 
-	remotes.RemoteEvent.OnClientEvent:Connect(function(method: string, key: string, ...: any?)
+	remotes.RemoteEvent.OnClientEvent:Connect(function(method: string | number, key: string, ...: any?)
 		if method == NetworkerUtils.SET_TAG then
 			module[key] = ...
 			if self.changedSignals[key] then

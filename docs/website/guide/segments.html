@@ -112,7 +112,7 @@ return ShopService</code></pre>
 end</code></pre>
 <ul>
   <li><strong>Where to look segments up.</strong> Do it in <code>Init</code> or later, not at the top of the module: while modules are still loading, the one you want may not be loaded yet. An unknown name is an error, not <code>nil</code>.</li>
-  <li><strong>Autocomplete.</strong> With Branch Studio, typing inside <code>GetSegment("</code> suggests the segment names on that script's side, and <code>GetSegment</code> is typed per segment, so <code>Branch:GetSegment("ShopService"):Buy(…)</code> autocompletes too.</li>
+  <li><strong>Autocomplete.</strong> With Branch Studio, typing inside <code>GetSegment("</code> suggests the segment names on that script's side, and <code>GetSegment</code> is typed per segment, so <code>Branch:GetSegment("ShopService"):Buy(…)</code> autocompletes too. What a method returns is read from its code when it has no return annotation (<code>return self.Coins + 1</code> is a <code>number</code>, <code>return { id = id }</code> a table with an <code>id</code> field, <code>return self:Other()</code> whatever <code>Other</code> returns), and the module's own <code>type</code> declarations and <code>typeof(localFunction)</code> keep their meaning. What it cannot tell from the code stays <code>any</code>: annotate those returns.</li>
 </ul>
 
 <h2>When something goes wrong</h2>

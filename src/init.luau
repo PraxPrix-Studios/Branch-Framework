@@ -88,7 +88,7 @@ local HOOK_SIGNALS: { [string]: RBXScriptSignal? } = {
 }
 
 local branch = {
-	Version = "2.5.1",
+	Version = "2.5.2",
 }
 
 local function fail(message: string)
@@ -131,19 +131,20 @@ end
 
 -- Runs `action`, warning once if it is still running after 5 s (a require or
 -- Init that waits forever would otherwise stall the whole start silently).
-local function watched<T...>(label: string, action: () -> T...): T...
+-- `action` is a pcall: it gives back (ok, result).
+local function watched(label: string, action: () -> (boolean, any)): (boolean, any)
 	local finished = false
 	local watcher = task.delay(5, function()
 		if not finished then
 			warn(`[Branch] {label} is still running after 5 s; every segment after it is waiting (a WaitForChild or DataStore call that never returns?)`)
 		end
 	end)
-	local results = table.pack(action())
+	local ok, result = action()
 	finished = true
 	if coroutine.status(watcher) == "suspended" then
 		task.cancel(watcher)
 	end
-	return table.unpack(results, 1, results.n)
+	return ok, result
 end
 
 local function load(module: ModuleScript)
@@ -179,7 +180,7 @@ end
 -- Dependency order: a segment's Init runs after the Init of everything in
 -- its `Dependencies` list. Ties keep discovery order.
 local function initOrder(): { number }
-	local order: { number } = table.create(count)
+	local order: { number } = {}
 	local state: { [number]: number } = {} -- 1 = visiting, 2 = done
 	local indexOf: { [string]: number } = {}
 	for index = 1, count do
@@ -219,7 +220,7 @@ end
 
 local function connectHooks()
 	for hookName, signal in HOOK_SIGNALS do
-		local fns: { (any, number) -> () } = {}
+		local fns: { (any, number) -> ...any } = {}
 		local selves: { any } = {}
 		local labels: { string } = {}
 		local lastWarn: { number } = {}
@@ -429,7 +430,7 @@ function branch.AwaitStart(self: Branch)
 end
 
 function branch.GetReport(self: Branch): { SegmentReport }
-	local report = table.create(count)
+	local report: { SegmentReport } = {}
 	for index = 1, count do
 		report[index] = {
 			Name = names[index],
@@ -450,7 +451,9 @@ setmetatable(branch, {
 			if not module then
 				error("Branch.Network is not compiled: turn on Network in Branch Studio and declare Service.Network tables", 2)
 			end
-			local network = require(module :: ModuleScript)
+			-- the generated module is found at run time, so the checker cannot
+			-- follow the require; Branch.Network gets its type from NetworkApi
+			local network = (require :: any)(module)
 			rawset(self, "Network", network)
 			return network
 		elseif key == "Data" then

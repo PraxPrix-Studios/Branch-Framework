@@ -1,3 +1,6 @@
+--!nocheck
+-- Branch: vendored as is; its own code trips both Luau type solvers, so it
+-- is not type checked (Branch reaches it through DataService only).
 --[[
 MAD STUDIO (by loleris)
 
