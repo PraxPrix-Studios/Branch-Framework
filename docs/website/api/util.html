@@ -16,7 +16,7 @@
 <main class="doc">
 <div class="eyebrow">api/util</div>
 <h1>Utilities</h1>
-<p class="lead">Three small modules ship inside the package. They are ModuleScripts, not fields of <code>Branch</code>, so require them directly:</p>
+<p class="lead">Four modules ship inside the package. They are ModuleScripts, not fields of <code>Branch</code>, so require them directly:</p>
 <h2 id="at-a-glance">At a glance</h2>
 <pre><code>local Util = game.ReplicatedStorage.Packages.Branch.Util
 
@@ -34,18 +34,26 @@ ThreadReaper.Cancel(token)                    -- stop a Delay before it runs
 local Timer = require(Util.Timer)             -- countdowns
 local timer = Timer.new(10)
 timer:OnFinished(function(state, seconds) end)
-timer:Start() ; timer:Pause() ; timer:Stop()  -- Start again resumes where Pause left off
-timer:Wait()                                  -- yields until it ends: "Finished" or "Stopped"</code></pre>
+timer:Start() ; timer:Pause() ; timer:Resume() -- Start always starts from the full length
+timer:Wait()                                  -- yields until it ends: "Finished" or "Stopped"
+
+local Vide = require(Util.Vide)               -- reactive UI (Vide 0.4.1)
+local count = Vide.source(0)                  -- a value that can change
+local label = Vide.create "TextLabel" {       -- an Instance that follows it
+	Text = function() return `{count()}` end,
+}
+count(1)                                      -- the label's Text becomes "1"</code></pre>
 <ul class="glance-notes">
   <li><strong>Modules, not fields:</strong> require them from <code>Packages.Branch.Util</code>; <code>Branch.Util</code> errors.</li>
-  <li><strong>Scythe</strong> is by checcerr and fridayqx (MPL-2.0), <strong>ThreadReaper</strong> by divine.no.</li>
+  <li><strong>Scythe</strong> is by checcerr and fridayqx (MPL-2.0), <strong>ThreadReaper</strong> by divine.no, <strong>Vide</strong> by centau (MIT).</li>
 </ul>
 <p class="glance-more">Every function in detail:</p>
 
 <pre><code>local Util = game.ReplicatedStorage.Packages.Branch.Util
 local Scythe = require(Util.Scythe)
 local ThreadReaper = require(Util.ThreadReaper)
-local Timer = require(Util.Timer)</code></pre>
+local Timer = require(Util.Timer)
+local Vide = require(Util.Vide)</code></pre>
 
 <h2 id="scythe">Scythe</h2>
 <p>Cleanup without objects. A <em>scope</em> is a plain number handle. You add things to it, and cleaning the scope disposes all of them, newest first. Unlike Maid or Trove there are no objects or metatables, so creating a scope costs almost nothing.</p>
@@ -124,8 +132,15 @@ timer.<b>Callback</b> = fn</div>
 <div class="api"><h3>States</h3><div class="sig">Timer.<b>Enums</b>   -- also Timer:GetEnums()
 "Running" | "Paused" | "Finished" | "Stopped" | "Dead" | "Died"</div><p>After a timer ends, <code>GetState</code> reports <code>"Dead"</code>; <code>Wait</code> still tells you whether it finished or was stopped.</p></div>
 
+<h2 id="vide">Vide</h2>
+<p>Vide 0.4.1 by centau: a reactive UI library. Values you can change (<code>source</code>), code that reruns when they change (<code>effect</code>, <code>derive</code>), and Instances built with <code>create</code> whose properties follow them. It ships unchanged; <a href="https://centau.github.io/vide/">Vide's own documentation</a> covers every function.</p>
+<ul>
+  <li><strong>Autocomplete:</strong> Branch Studio's <b>Vide IntelliSense</b> (Settings › Editor) suggests Vide's functions after <code>Vide.</code> (or any local that holds a require of Vide), class names inside <code>create "…"</code>, and every property of the class inside <code>create "Class" { }</code>, typed, with a starting value of the right type.</li>
+  <li><strong>Types:</strong> Vide is written for the new Luau type solver. Under the old one, its own files show a few type warnings in Script Analysis and its functions autocomplete without types.</li>
+</ul>
+
 <h2>Credits</h2>
-<p>Scythe is by checcerr and fridayqx (MPL-2.0). ThreadReaper is by divine.no. Both came to Branch from Branch 1.</p>
+<p>Scythe is by checcerr and fridayqx (MPL-2.0). ThreadReaper is by divine.no. Both came to Branch from Branch 1. Vide is by centau (MIT, <a href="https://github.com/centau/vide">github.com/centau/vide</a>).</p>
 </main>
 </div>
 <script src="../assets/site.js"></script>

@@ -125,4 +125,7 @@ function Client.OnRemoved(path: DataPath, callback: (index: number, value: any) 
 	end)
 end
 
-return table.freeze(Client)
+-- Preserve the inferred public methods through require() for Branch.Data's
+-- exported type under the new Luau type solver.
+type Api = typeof(Client)
+return table.freeze(Client) :: Api

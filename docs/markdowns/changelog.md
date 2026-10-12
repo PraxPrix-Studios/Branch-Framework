@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.5.3
+
+- **Vide** (`Packages.Branch.Util.Vide`): Vide 0.4.1 by centau, a reactive UI library, comes with the runtime. It is typed for the new Luau type solver; under the old one, its own files show a few type warnings in Script Analysis.
+- **Vide IntelliSense** (Branch Studio, Settings › Editor): class names inside `create "..."`, Vide's API after `Vide.`, and every property of the class inside `create "Class" { }`, typed, with a starting value of the right type.
+- `Branch.Data.Server` and `Branch.Data.Client` keep their method types through `require` under the new type solver.
+
 ## 2.5.2
 
 - **Autocomplete with the new Luau type solver:** `Branch.Network` (client and server), `Branch.Data` and `Branch.Keybinds` keep their types under the old and the new solver. `Branch.Network.Client` no longer comes out as `any`, and Branch's own modules (DataService and Networker included) raise no type errors in Script Analysis.

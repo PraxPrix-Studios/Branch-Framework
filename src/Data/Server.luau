@@ -466,4 +466,8 @@ function Server.GetProfile(player: Player): any
 	return if service:hasProfile(player) then service:getProfile(player) else nil
 end
 
-return table.freeze(Server)
+-- Keep the inferred public method table visible through require(). The new
+-- Luau type solver can otherwise widen a frozen module return and make
+-- Branch.Data.Server appear as any to consumers.
+type Api = typeof(Server)
+return table.freeze(Server) :: Api
