@@ -88,7 +88,7 @@ local HOOK_SIGNALS: { [string]: RBXScriptSignal? } = {
 }
 
 local branch = {
-	Version = "2.5.3",
+	Version = "2.5.4",
 }
 
 local function fail(message: string)
