@@ -45,7 +45,7 @@ local label = Vide.create "TextLabel" {       -- an Instance that follows it
 count(1)                                      -- the label's Text becomes "1"</code></pre>
 <ul class="glance-notes">
   <li><strong>Modules, not fields:</strong> require them from <code>Packages.Branch.Util</code>; <code>Branch.Util</code> errors.</li>
-  <li><strong>Scythe</strong> is by checcerr and fridayqx (MPL-2.0), <strong>ThreadReaper</strong> by divine.no, <strong>Vide</strong> by centau (MIT).</li>
+  <li><strong>Scythe</strong> is by checcerr, fridayqx, venexs and mycxm (MPL-2.0), <strong>ThreadReaper</strong> by divine.no, <strong>Vide</strong> by centau (MIT).</li>
 </ul>
 <p class="glance-more">Every function in detail:</p>
 
@@ -78,11 +78,11 @@ Scythe.destroy(scope)  -- dispose everything and retire the handle</code></pre>
 </tbody></table></div>
 
 <div class="api"><h3>Scythe.scope</h3><div class="sig">Scythe.<b>scope</b>(): Scope</div><p>A new, empty scope.</p></div>
-<div class="api"><h3>Scythe.add</h3><div class="sig">Scythe.<b>add</b>&lt;T&gt;(scope: Scope, value: T): T</div><p>Tracks <code>value</code> and returns it, so you can wrap creation: <code>local part = Scythe.add(scope, Instance.new("Part"))</code>. Errors if the value has no way to be cleaned up.</p></div>
-<div class="api"><h3>Scythe.addBulk</h3><div class="sig">Scythe.<b>addBulk</b>(scope: Scope, ...: unknown)</div><p>Tracks several values in one call. All or nothing: if any value cannot be cleaned up, none are added. <code>nil</code> in the list is an error.</p></div>
+<div class="api"><h3>Scythe.add</h3><div class="sig">Scythe.<b>add</b>&lt;T&gt;(scope: Scope, value: T): T</div><p>Tracks <code>value</code> and returns it, so you can wrap creation: <code>local part = Scythe.add(scope, Instance.new("Part"))</code>. Adding is only a store; a value with no way to be cleaned up is reported with a warning when the scope is cleaned.</p></div>
+<div class="api"><h3>Scythe.addBulk</h3><div class="sig">Scythe.<b>addBulk</b>(scope: Scope, ...: unknown)</div><p>Tracks several values in one call, as if each one was passed to <code>add</code>.</p></div>
 <div class="api"><h3>Scythe.remove</h3><div class="sig">Scythe.<b>remove</b>(scope: Scope, value: unknown): boolean</div><p>Stops tracking <code>value</code> <em>without</em> disposing it, for when something else takes ownership. Returns whether it was found.</p></div>
-<div class="api"><h3>Scythe.clean</h3><div class="sig">Scythe.<b>clean</b>(scope: Scope)</div><p>Disposes everything, newest first, and keeps the scope ready for reuse. Every item is disposed even if some disposers error; the errors are raised together afterwards.</p></div>
-<div class="api"><h3>Scythe.destroy</h3><div class="sig">Scythe.<b>destroy</b>(scope: Scope)</div><p>Cleans the scope and retires its handle. Using the handle afterwards is an error, never a silent mix-up with a newer scope.</p></div>
+<div class="api"><h3>Scythe.clean</h3><div class="sig">Scythe.<b>clean</b>(scope: Scope)</div><p>Disposes everything, newest first, and keeps the scope ready for reuse. Every item is disposed even if some disposers error; the first error is raised afterwards.</p></div>
+<div class="api"><h3>Scythe.destroy</h3><div class="sig">Scythe.<b>destroy</b>(scope: Scope)</div><p>Cleans the scope and gives its handle back: a later <code>Scythe.scope()</code> can get the same number, so drop your copy of the handle.</p></div>
 <div class="api"><h3>Scythe.count</h3><div class="sig">Scythe.<b>count</b>(scope: Scope): number</div><p>How many items the scope tracks.</p></div>
 <div class="api"><h3>Scythe.isAlive</h3><div class="sig">Scythe.<b>isAlive</b>(scope: Scope): boolean</div><p>Whether the handle points to a live scope.</p></div>
 <div class="note warn"><b>Disposers must not yield.</b> A disposer may add to, remove from, clean or destroy its own scope, but a yield would leave the scope half-cleaned for other threads.</div>
@@ -140,7 +140,7 @@ timer.<b>Callback</b> = fn</div>
 </ul>
 
 <h2>Credits</h2>
-<p>Scythe is by checcerr and fridayqx (MPL-2.0). ThreadReaper is by divine.no. Both came to Branch from Branch 1. Vide is by centau (MIT, <a href="https://github.com/centau/vide">github.com/centau/vide</a>).</p>
+<p>Scythe is by checcerr, fridayqx, venexs and mycxm (MPL-2.0). ThreadReaper is by divine.no. Both came to Branch from Branch 1. Vide is by centau (MIT, <a href="https://github.com/centau/vide">github.com/centau/vide</a>).</p>
 </main>
 </div>
 <script src="../assets/site.js"></script>
